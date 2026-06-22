@@ -66,15 +66,21 @@ export const recordedActionV = v.union(
 export default defineSchema({
   games: defineTable({
     state: gameStateV,
+    // The short, shareable join code (canonical: uppercase, no separator).
+    // Anyone with it can enter the game — as the opponent if a seat is open,
+    // otherwise as a spectator.
+    joinToken: v.string(),
     // Per-seat capability tokens. Holding a seat token *is* the authorization
-    // to act as that color (a signed-link model). Step 4 will additionally bind
-    // a seat to an authenticated identity; until then the token is the seat.
-    whiteToken: v.string(),
-    blackToken: v.string(),
-    whiteClaimed: v.boolean(),
-    blackClaimed: v.boolean(),
+    // to act as that color. The creator gets `initiatorToken`; the joiner gets
+    // `opponentToken`. White/Black are assigned RANDOMLY at join, so each color
+    // token points at one of the two seats. They are null until the opponent
+    // joins (the game is "waiting" while `opponentToken` is null).
+    initiatorToken: v.string(),
+    opponentToken: v.union(v.string(), v.null()),
+    whiteToken: v.union(v.string(), v.null()),
+    blackToken: v.union(v.string(), v.null()),
     createdAt: v.number(),
-  }),
+  }).index("by_join_token", ["joinToken"]),
 
   // Append-only audit/replay log (full truth — never exposed un-filtered).
   moves: defineTable({

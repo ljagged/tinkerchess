@@ -7,139 +7,158 @@ import schema from "./schema";
 import { parseSquare } from "../src/engine/index.js";
 
 // Functional tests through the real Convex functions. The engine's rules are
-// already unit-tested; these verify the Convex layer: seat identity, turn
-// gating, and — most importantly — the fog-of-war boundary at getGameView.
+// already unit-tested; these verify the Convex layer: token join, random color
+// assignment, seat identity / turn gating, and the fog-of-war boundary.
 
 const modules = import.meta.glob("./**/!(*.test).ts");
 
-describe("games API", () => {
-  it("plays a move through create -> join -> makeMove", async () => {
-    const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
-    const black = await t.mutation(api.games.joinGame, { gameId: white.gameId });
-    expect(black.color).toBe("b");
-    expect(black.seatToken).toBeTruthy();
+type T = ReturnType<typeof convexTest>;
 
-    const view = await t.mutation(api.games.makeMove, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-      from: parseSquare("e2"),
-      to: parseSquare("e4"),
+/** Create a game and join it, returning the resolved white/black seat tokens. */
+async function startGame(t: T) {
+  const init = await t.mutation(api.games.createGame, {});
+  const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+  const initView = await t.query(api.games.getGameView, {
+    gameId: init.gameId,
+    seatToken: init.seatToken,
+  });
+  const initIsWhite = initView!.you === "w";
+  return {
+    gameId: init.gameId,
+    joinToken: init.joinToken,
+    initSeat: init.seatToken,
+    oppSeat: opp.seatToken!,
+    whiteSeat: initIsWhite ? init.seatToken : opp.seatToken!,
+    blackSeat: initIsWhite ? opp.seatToken! : init.seatToken,
+  };
+}
+
+describe("games API", () => {
+  it("creates a waiting game, then an opponent joins and the game becomes active", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, {});
+    expect(init.joinToken).toMatch(/^[A-Z0-9]{8}$/);
+
+    const waiting = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
     });
-    expect(view.turn).toBe("b");
-    expect(view.board[parseSquare("e4")]).toEqual({ color: "w", type: "p" });
+    expect(waiting!.phase).toBe("waiting");
+    expect(waiting!.role).toBe("initiator");
+    expect(waiting!.joinToken).toBe(init.joinToken); // initiator can see/share it
+
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    expect(opp.role).toBe("player");
+    expect(opp.seatToken).toBeTruthy();
+
+    const active = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(active!.phase).toBe("active");
   });
 
-  it("rejects acting out of turn and rejects non-players", async () => {
+  it("assigns the two seats exactly one White and one Black", async () => {
     const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
-    const black = await t.mutation(api.games.joinGame, { gameId: white.gameId });
+    const g = await startGame(t);
+    const a = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.initSeat });
+    const b = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.oppSeat });
+    expect([a!.you, b!.you].sort()).toEqual(["b", "w"]);
+  });
 
-    // Black tries to move while it's White's turn.
+  it("lets a third caller in as a spectator (no seat, no token leak)", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    const third = await t.mutation(api.games.joinByToken, { token: g.joinToken });
+    expect(third.role).toBe("spectator");
+    expect(third.seatToken).toBeNull();
+
+    const spec = await t.query(api.games.getGameView, { gameId: g.gameId });
+    expect(spec!.role).toBe("spectator");
+    expect(spec!.joinToken).toBeNull(); // spectators never receive the token
+  });
+
+  it("rejects an unknown token", async () => {
+    const t = convexTest(schema, modules);
+    await expect(t.mutation(api.games.joinByToken, { token: "ZZZZ9999" })).rejects.toThrow();
+  });
+
+  it("plays a move once active, and rejects acting out of turn / by non-players", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+
+    // Black can't move first.
     await expect(
       t.mutation(api.games.makeMove, {
-        gameId: white.gameId,
-        seatToken: black.seatToken!,
+        gameId: g.gameId,
+        seatToken: g.blackSeat,
         from: parseSquare("e7"),
         to: parseSquare("e5"),
       }),
     ).rejects.toThrow();
 
-    // An unrecognized token is a spectator and cannot act.
+    // White (whichever seat that is) plays e2-e4.
+    const view = await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+    expect(view.turn).toBe("b");
+    expect(view.board[parseSquare("e4")]).toEqual({ color: "w", type: "p" });
+
+    // A spectator (unrecognized token) cannot move.
     await expect(
       t.mutation(api.games.makeMove, {
-        gameId: white.gameId,
-        seatToken: "not-a-real-token",
-        from: parseSquare("e2"),
-        to: parseSquare("e4"),
+        gameId: g.gameId,
+        seatToken: "bogus",
+        from: parseSquare("e7"),
+        to: parseSquare("e5"),
       }),
     ).rejects.toThrow();
   });
 
-  it("hides a phased piece from the opponent's view (fog boundary)", async () => {
+  it("hides a phased piece from the opponent (fog boundary)", async () => {
     const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
-    const black = await t.mutation(api.games.joinGame, { gameId: white.gameId });
-
-    // White phases the queen out for 4 turns.
+    const g = await startGame(t);
+    // White phases the queen out for 4.
     await t.mutation(api.games.phaseOut, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
       from: parseSquare("d1"),
       duration: 4,
     });
 
-    const whiteView = await t.query(api.games.getGameView, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-    });
-    const blackView = await t.query(api.games.getGameView, {
-      gameId: white.gameId,
-      seatToken: black.seatToken!,
-    });
-
+    const whiteView = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.whiteSeat });
+    const blackView = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.blackSeat });
     expect(whiteView!.yourPhased).toHaveLength(1);
     expect(blackView!.yourPhased).toHaveLength(0);
-    expect(blackView!.warningSquares).toHaveLength(0); // not returning next turn yet
-    expect(blackView!.board[parseSquare("d1")]).toBeNull(); // off-board for everyone
-    expect(JSON.stringify(blackView)).not.toContain("returnOn"); // no timer leak
+    expect(blackView!.board[parseSquare("d1")]).toBeNull();
+    expect(JSON.stringify(blackView)).not.toContain("returnOn");
   });
 
-  it("treats a third caller (no token) as a spectator with no phased info", async () => {
+  it("newGame resets the board and keeps both players seated", async () => {
     const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
-    await t.mutation(api.games.joinGame, { gameId: white.gameId });
-    await t.mutation(api.games.phaseOut, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-      from: parseSquare("d1"),
-      duration: 4,
-    });
-    const spectator = await t.query(api.games.getGameView, { gameId: white.gameId });
-    expect(spectator!.you).toBe("spectator");
-    expect(spectator!.yourPhased).toHaveLength(0);
-    expect(spectator!.warningSquares).toHaveLength(0);
-  });
-
-  it("reports the black seat open until it is claimed (invite state)", async () => {
-    const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
-    const before = await t.query(api.games.getGameView, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-    });
-    expect(before!.blackOpen).toBe(true);
-
-    await t.mutation(api.games.joinGame, { gameId: white.gameId });
-    const after = await t.query(api.games.getGameView, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-    });
-    expect(after!.blackOpen).toBe(false);
-  });
-
-  it("newGame resets the board to the start, and only players may call it", async () => {
-    const t = convexTest(schema, modules);
-    const white = await t.mutation(api.games.createGame, {});
+    const g = await startGame(t);
     await t.mutation(api.games.makeMove, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
       from: parseSquare("e2"),
       to: parseSquare("e4"),
     });
 
-    // A spectator (unrecognized token) cannot reset.
+    // A spectator cannot reset.
     await expect(
-      t.mutation(api.games.newGame, { gameId: white.gameId, seatToken: "bogus" }),
+      t.mutation(api.games.newGame, { gameId: g.gameId, seatToken: "bogus" }),
     ).rejects.toThrow();
 
-    await t.mutation(api.games.newGame, { gameId: white.gameId, seatToken: white.seatToken });
-    const view = await t.query(api.games.getGameView, {
-      gameId: white.gameId,
-      seatToken: white.seatToken,
-    });
-    expect(view!.turn).toBe("w");
-    expect(view!.board[parseSquare("e2")]).toEqual({ color: "w", type: "p" }); // pawn home again
-    expect(view!.board[parseSquare("e4")]).toBeNull();
+    await t.mutation(api.games.newGame, { gameId: g.gameId, seatToken: g.initSeat });
+
+    // Both original seats are still players, covering exactly White and Black.
+    const a = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.initSeat });
+    const b = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.oppSeat });
+    expect([a!.you, b!.you].sort()).toEqual(["b", "w"]);
+    expect(a!.board[parseSquare("e2")]).toEqual({ color: "w", type: "p" }); // pawn home again
+    expect(a!.board[parseSquare("e4")]).toBeNull();
   });
 });

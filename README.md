@@ -18,7 +18,7 @@ See [`docs/` / the plan](#status) for the full ruleset.
   the engine. `getGameView` is the privacy boundary: it returns each caller only
   what they're allowed to see.
 - **`app/`** — the Next.js (App Router) frontend. A `react-chessboard` driven by
-  `getGameView`, with the phasing UI, timers, and shareable links. The engine is
+  `getGameView`, with the phasing UI, timers, and token-based join. The engine is
   intentionally **not** bundled into the client — the server is authoritative and
   the client only renders the filtered view it's given.
 
@@ -52,9 +52,12 @@ npm run build           # production build
 - ✅ **Step 2** — Convex schema + `createGame` / `joinGame` / `makeMove` /
   `phaseOut` / `getGameView`, delegating to the engine; functional tests at the
   API boundary.
-- ✅ **Step 3** — Next.js board + phasing UI (`app/`): create-game flow, a
-  `react-chessboard` driven by `getGameView`, drag-to-move, the phase-out flow
-  (pick piece + duration), own-timer overlay, opponent warning highlight, and a
-  shareable link. Verified by a live integration smoke against the deployment.
-- ⬜ **Step 4** — real accounts/auth on top of seat tokens; spectator polish.
+- ✅ **Step 3** — Next.js board + phasing UI (`app/`): a `react-chessboard`
+  driven by `getGameView`, drag-to-move, the phase-out flow (pick piece +
+  duration), own-timer overlay, opponent warning highlight, and the game-over
+  banner / New game. Verified by a live integration smoke against the deployment.
+- ✅ **Token-based join** — splash with New Game / Join Game; the initiator
+  shares a short `XXXX-XXXX` token and waits; the opponent enters it to join;
+  later joiners spectate. White/Black are assigned **randomly** at join.
+- ⬜ **Step 4** — real accounts/auth on top of seat tokens.
 - ⬜ **Step 5** — history/replay, Elo, polish.

@@ -1,12 +1,10 @@
-// Client-side seat storage. A seat token is the capability to act as a color in
-// a specific game; we keep it in localStorage keyed by gameId so refreshing or
-// re-opening the link keeps your seat. Spectators are stored too (token null) so
-// we don't repeatedly try to claim a seat.
-
-export type SeatColor = "w" | "b" | "spectator";
+// Client-side seat storage. A seat token is the capability to act in a specific
+// game; we keep it in localStorage keyed by gameId so a refresh keeps the seat.
+// Spectators are stored too (token null) so we know they entered via a token and
+// shouldn't be redirected back to the splash. Color is NOT stored — it's
+// assigned server-side at join time and read from the game view's `you`.
 
 export interface Seat {
-  color: SeatColor;
   seatToken: string | null;
 }
 

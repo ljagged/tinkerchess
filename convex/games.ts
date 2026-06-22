@@ -6,22 +6,64 @@ import { pieceTypeV } from "./schema";
 import * as engine from "../src/engine/index.js";
 
 // The Convex layer is thin: it owns identity (which seat is acting), persistence,
-// and the fog-of-war boundary, and delegates ALL rules to the pure engine. The
-// engine never mutates its input, so reading `game.state` and passing it to
-// engine functions is safe.
+// and the fog-of-war boundary, and delegates ALL rules to the pure engine.
+//
+// Joining is by a short shared `joinToken`. The creator holds `initiatorToken`;
+// the first joiner gets `opponentToken`; White/Black are mapped onto those two
+// seats at RANDOM when the opponent joins. A game is "waiting" until then.
 
 type Viewer = engine.Viewer;
+type Role = "initiator" | "player" | "spectator";
+
+// --- join token ------------------------------------------------------------
+
+// 8 chars in two groups of 4. Charset excludes ambiguous 0 O 1 I L.
+const TOKEN_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+const TOKEN_LEN = 8;
+
+function randomToken(): string {
+  const bytes = new Uint32Array(TOKEN_LEN);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (let i = 0; i < TOKEN_LEN; i++) {
+    out += TOKEN_CHARS.charAt((bytes[i] ?? 0) % TOKEN_CHARS.length);
+  }
+  return out;
+}
+
+/** Canonicalize user input to compare against stored tokens (uppercase, A–Z/0–9 only). */
+function canonicalToken(input: string): string {
+  return input.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+async function uniqueJoinToken(ctx: MutationCtx): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const token = randomToken();
+    const existing = await ctx.db
+      .query("games")
+      .withIndex("by_join_token", (q) => q.eq("joinToken", token))
+      .unique();
+    if (!existing) return token;
+  }
+  throw new Error("could not generate a unique join token");
+}
+
+// --- seat resolution -------------------------------------------------------
 
 /**
- * Resolve a caller's seat from their capability token. Spectators (no token, or
- * an unrecognized one) get the "spectator" view. This mapping is the only place
- * a viewer identity is established — it is NEVER taken from a client-supplied
- * color argument.
+ * Resolve a caller's seat from their capability token. Only matches once colors
+ * are assigned (i.e. the game is active). This is the only place a viewer's
+ * color is established — never from a client-supplied argument.
  */
 function viewerFromToken(game: Doc<"games">, token: string | undefined): Viewer {
-  if (token && token === game.whiteToken) return "w";
-  if (token && token === game.blackToken) return "b";
+  if (!token) return "spectator";
+  if (game.whiteToken && token === game.whiteToken) return "w";
+  if (game.blackToken && token === game.blackToken) return "b";
   return "spectator";
+}
+
+function isInitiator(game: Doc<"games">, token: string | undefined): boolean {
+  return !!token && token === game.initiatorToken;
 }
 
 function requireGame(game: Doc<"games"> | null): Doc<"games"> {
@@ -30,9 +72,9 @@ function requireGame(game: Doc<"games"> | null): Doc<"games"> {
 }
 
 /**
- * Coerce a stored game's state into a full engine GameState. The wonBySelfCapture
- * and lastEvent fields are stored optional (for games created before they
- * existed); the engine treats their absence as the default.
+ * Coerce a stored game's state into a full engine GameState (wonBySelfCapture /
+ * lastEvent are stored optional for back-compat; the engine treats absence as
+ * the default).
  */
 function engineState(game: Doc<"games">): engine.GameState {
   const s = game.state;
@@ -43,56 +85,86 @@ function engineState(game: Doc<"games">): engine.GameState {
   };
 }
 
-/** Create a new game. The creator takes White and receives White's seat token. */
+// --- public API ------------------------------------------------------------
+
+/** Create a game. The creator gets a join token to share and their seat token. */
 export const createGame = mutation({
   args: {},
   handler: async (ctx) => {
-    const whiteToken = crypto.randomUUID();
-    const blackToken = crypto.randomUUID();
+    const joinToken = await uniqueJoinToken(ctx);
+    const initiatorToken = crypto.randomUUID();
     const gameId = await ctx.db.insert("games", {
       state: engine.createGame(),
-      whiteToken,
-      blackToken,
-      whiteClaimed: true,
-      blackClaimed: false,
+      joinToken,
+      initiatorToken,
+      opponentToken: null,
+      whiteToken: null,
+      blackToken: null,
       createdAt: Date.now(),
     });
-    return { gameId, color: "w" as const, seatToken: whiteToken };
+    return { gameId, joinToken, seatToken: initiatorToken };
   },
 });
 
 /**
- * Claim the open seat for a shared-game link. First caller takes Black; once
- * both seats are claimed, further callers are spectators (no token). Step 4
- * will gate this behind authenticated identities.
+ * Enter a game by its join token. If a seat is open the caller becomes the
+ * opponent and colors are assigned at random; otherwise they spectate. Throws
+ * if no game matches the token.
  */
-export const joinGame = mutation({
-  args: { gameId: v.id("games") },
-  handler: async (ctx, { gameId }) => {
-    const game = requireGame(await ctx.db.get("games", gameId));
-    if (!game.blackClaimed) {
-      await ctx.db.patch("games", gameId, { blackClaimed: true });
-      return { color: "b" as const, seatToken: game.blackToken };
+export const joinByToken = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, { token }) => {
+    const canonical = canonicalToken(token);
+    const game = await ctx.db
+      .query("games")
+      .withIndex("by_join_token", (q) => q.eq("joinToken", canonical))
+      .unique();
+    if (!game) throw new Error("No game found for that token.");
+
+    if (game.opponentToken === null) {
+      const opponentToken = crypto.randomUUID();
+      const initiatorIsWhite = Math.random() < 0.5;
+      await ctx.db.patch("games", game._id, {
+        opponentToken,
+        whiteToken: initiatorIsWhite ? game.initiatorToken : opponentToken,
+        blackToken: initiatorIsWhite ? opponentToken : game.initiatorToken,
+      });
+      return { gameId: game._id, role: "player" as const, seatToken: opponentToken };
     }
-    return { color: "spectator" as const, seatToken: null };
+    return { gameId: game._id, role: "spectator" as const, seatToken: null };
   },
 });
 
 /**
- * The fog-filtered view for a caller. THE privacy boundary: it returns only what
- * the resolved viewer is allowed to see — never the opponent's phased pieces,
- * timers, or return squares beyond the one-turn square-only warning. The full
- * `state.phased` is never serialized out; `engine.viewFor` enforces this.
+ * The fog-filtered view for a caller, plus join lifecycle. THE privacy boundary:
+ * never leaks the opponent's phased pieces/timers (beyond the square-only
+ * warning), and the join token is returned ONLY to the waiting initiator and to
+ * active players (to invite spectators) — never to spectators.
  */
 export const getGameView = query({
   args: { gameId: v.id("games"), seatToken: v.optional(v.string()) },
   handler: async (ctx, { gameId, seatToken }) => {
     const game = await ctx.db.get("games", gameId);
     if (!game) return null;
-    const view = engine.viewFor(engineState(game), viewerFromToken(game, seatToken));
-    // Surface seat availability so a player's invite text can update reactively
-    // once the opponent has claimed Black (after which new openers spectate).
-    return { ...view, blackOpen: !game.blackClaimed };
+
+    const waiting = game.opponentToken === null;
+    const viewer: Viewer = waiting ? "spectator" : viewerFromToken(game, seatToken);
+    const role: Role = waiting
+      ? isInitiator(game, seatToken)
+        ? "initiator"
+        : "spectator"
+      : viewer === "spectator"
+        ? "spectator"
+        : "player";
+
+    const base = engine.viewFor(engineState(game), viewer);
+    const showToken = role === "initiator" || role === "player";
+    return {
+      ...base,
+      phase: waiting ? ("waiting" as const) : ("active" as const),
+      role,
+      joinToken: showToken ? game.joinToken : null,
+    };
   },
 });
 
@@ -167,8 +239,8 @@ export const phaseOut = mutation({
 });
 
 /**
- * Reset an existing game to a fresh board, keeping the same seats and tokens so
- * both players can play again at the same URL. Either player may trigger it.
+ * Reset an ended game to a fresh board for a rematch, keeping the same seats and
+ * join token but RE-RANDOMIZING sides. Either player may trigger it.
  */
 export const newGame = mutation({
   args: { gameId: v.id("games"), seatToken: v.string() },
@@ -177,7 +249,14 @@ export const newGame = mutation({
     if (viewerFromToken(game, seatToken) === "spectator") {
       throw new Error("only a player can start a new game");
     }
-    await ctx.db.patch("games", gameId, { state: engine.createGame() });
+    if (game.opponentToken === null) throw new Error("game has not started");
+
+    const initiatorIsWhite = Math.random() < 0.5;
+    await ctx.db.patch("games", gameId, {
+      state: engine.createGame(),
+      whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
+      blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
+    });
     // Clear this game's move log so ply history restarts cleanly.
     const moves = await ctx.db
       .query("moves")

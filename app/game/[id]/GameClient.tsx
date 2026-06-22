@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComponentProps, CSSProperties } from "react";
+import { useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { loadSeat, saveSeat, type Seat } from "../../seat";
+import { loadSeat, type Seat } from "../../seat";
+import { CopyButton, formatToken } from "../../token";
 
 // The engine is intentionally NOT imported here — the server is authoritative
 // and getGameView hands us exactly what we're allowed to see. The client only
@@ -33,65 +35,95 @@ const PIECE_NAME: Record<string, string> = {
 
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
+  const router = useRouter();
 
-  const joinGame = useMutation(api.games.joinGame);
   const makeMove = useMutation(api.games.makeMove);
   const phaseOut = useMutation(api.games.phaseOut);
   const newGame = useMutation(api.games.newGame);
 
   const [seat, setSeat] = useState<Seat | null>(null);
+  const [noSeat, setNoSeat] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [phaseMode, setPhaseMode] = useState(false);
   const [phaseFrom, setPhaseFrom] = useState<number | null>(null);
   const [phaseDuration, setPhaseDuration] = useState(1);
-  const [shareUrl, setShareUrl] = useState("");
   const [boardWidth, setBoardWidth] = useState(480);
 
-  // Resolve our seat once: use the stored one, otherwise claim an open seat.
-  const claiming = useRef(false);
+  // Entry is via token on the splash; a direct visitor with no seat is sent back.
   useEffect(() => {
     const existing = loadSeat(id);
-    if (existing) {
-      setSeat(existing);
-      return;
+    if (existing) setSeat(existing);
+    else {
+      setNoSeat(true);
+      router.replace("/");
     }
-    if (claiming.current) return;
-    claiming.current = true;
-    joinGame({ gameId: id })
-      .then((res) => {
-        const s: Seat = { color: res.color, seatToken: res.seatToken };
-        saveSeat(id, s);
-        setSeat(s);
-      })
-      .catch((e) => setError((e as Error).message));
-  }, [id, joinGame]);
+  }, [id, router]);
 
   useEffect(() => {
-    setShareUrl(window.location.href);
     const fit = () => setBoardWidth(Math.min(480, window.innerWidth - 40));
     fit();
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
   }, []);
 
-  const view = useQuery(api.games.getGameView, {
-    gameId: id,
-    seatToken: seat?.seatToken ?? undefined,
-  });
+  const view = useQuery(
+    api.games.getGameView,
+    seat ? { gameId: id, seatToken: seat.seatToken ?? undefined } : "skip",
+  );
 
-  if (view === undefined) return <main className="wrap">Loading…</main>;
+  if (noSeat) return <main className="wrap">Redirecting…</main>;
+  if (!seat || view === undefined) return <main className="wrap">Loading…</main>;
   if (view === null) return <main className="wrap">Game not found.</main>;
 
-  const myColor = seat?.color ?? "spectator";
-  const isPlayer = myColor === "w" || myColor === "b";
-  const myTurn =
-    view.status === "active" && isPlayer && myColor === view.turn && !!seat?.seatToken;
-
-  // --- board position ---
+  // --- board position (used by both the waiting and active screens) ---
   const position: Record<string, string> = {};
   view.board.forEach((p, i) => {
     if (p) position[idxToSquare(i)] = pieceCode(p);
   });
+
+  // --- waiting room (before the opponent has joined) ---
+  if (view.phase === "waiting") {
+    return (
+      <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+        <div>
+          <Chessboard
+            id="phase-chess"
+            position={position as BoardProps["position"]}
+            boardWidth={boardWidth}
+            arePiecesDraggable={false}
+            customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
+          />
+        </div>
+        <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
+          <div className="panel" style={{ borderColor: "var(--accent)", display: "grid", gap: "0.8rem" }}>
+            <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>Waiting for opponent to join…</div>
+            {view.role === "initiator" && view.joinToken ? (
+              <>
+                <div className="muted">Share this token with your opponent:</div>
+                <div className="row" style={{ alignItems: "center", gap: "0.7rem" }}>
+                  <span style={{ fontFamily: "ui-monospace, monospace", fontSize: "1.5rem", letterSpacing: "0.15em" }}>
+                    {formatToken(view.joinToken)}
+                  </span>
+                  <CopyButton text={formatToken(view.joinToken)} />
+                </div>
+                <div className="muted" style={{ fontSize: "0.85rem" }}>
+                  Sides are chosen at random when your opponent joins.
+                </div>
+              </>
+            ) : (
+              <div className="muted">The game hasn’t started yet.</div>
+            )}
+          </div>
+        </aside>
+      </main>
+    );
+  }
+
+  // --- active game ---
+  const myColor = view.you;
+  const isPlayer = myColor === "w" || myColor === "b";
+  const myTurn =
+    view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
   // --- square highlights ---
   const styles: Record<string, CSSProperties> = {};
@@ -110,7 +142,7 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   // --- handlers ---
   const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target, piece) => {
-    if (!myTurn || !seat?.seatToken || phaseMode) return false;
+    if (!myTurn || !seat.seatToken || phaseMode) return false;
     const isPawn = piece[1] === "P";
     const lastRank = target.endsWith("8") || target.endsWith("1");
     const promotion = isPawn && lastRank ? ("q" as const) : undefined;
@@ -137,14 +169,9 @@ export function GameClient({ gameId }: { gameId: string }) {
   };
 
   const confirmPhase = async () => {
-    if (phaseFrom === null || !seat?.seatToken) return;
+    if (phaseFrom === null || !seat.seatToken) return;
     try {
-      await phaseOut({
-        gameId: id,
-        seatToken: seat.seatToken,
-        from: phaseFrom,
-        duration: phaseDuration,
-      });
+      await phaseOut({ gameId: id, seatToken: seat.seatToken, from: phaseFrom, duration: phaseDuration });
       setError(null);
       setPhaseMode(false);
       setPhaseFrom(null);
@@ -154,7 +181,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   };
 
   const startNewGame = async () => {
-    if (!seat?.seatToken) return;
+    if (!seat.seatToken) return;
     try {
       await newGame({ gameId: id, seatToken: seat.seatToken });
       setPhaseMode(false);
@@ -178,7 +205,6 @@ export function GameClient({ gameId }: { gameId: string }) {
     const loser = winner === "w" ? "b" : "w";
     const youWon = isPlayer && myColor === winner;
     if (view.wonBySelfCapture) {
-      // The losing side captured their OWN king.
       status = isPlayer
         ? youWon
           ? `${colorName(loser)} captured their own king — you win!`
@@ -249,7 +275,6 @@ export function GameClient({ gameId }: { gameId: string }) {
 
       <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
         <div className="panel">
-          {/* When the game is over, the result lives in the banner above. */}
           {view.status === "active" && (
             <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{status}</div>
           )}
@@ -303,8 +328,8 @@ export function GameClient({ gameId }: { gameId: string }) {
                       Phase out for {phaseDuration} turn{phaseDuration > 1 ? "s" : ""}
                     </button>
                     <span className="muted" style={{ fontSize: "0.85rem" }}>
-                      It returns to {idxToSquare(phaseFrom)} automatically and removes whatever is
-                      there — your own pieces included.
+                      It stays out through your turn(s) and returns to {idxToSquare(phaseFrom)} at
+                      the end of the last one, removing whatever is there — your own pieces included.
                     </span>
                   </div>
                 )}
@@ -336,30 +361,18 @@ export function GameClient({ gameId }: { gameId: string }) {
           </div>
         )}
 
-        {/* Only players can invite — spectators don't see the link at all. */}
-        {isPlayer && (
+        {/* Players can invite spectators with the token; spectators don't get it. */}
+        {view.joinToken && (
           <div className="panel">
-            <strong>Share this game</strong>
-            <div className="row" style={{ marginTop: "0.5rem" }}>
-              <input
-                readOnly
-                value={shareUrl}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  padding: "0.45rem 0.5rem",
-                  borderRadius: 8,
-                  border: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                }}
-              />
-              <button onClick={() => navigator.clipboard?.writeText(shareUrl)}>Copy</button>
+            <strong>Invite spectators</strong>
+            <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
+              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: "1.15rem", letterSpacing: "0.12em" }}>
+                {formatToken(view.joinToken)}
+              </span>
+              <CopyButton text={formatToken(view.joinToken)} />
             </div>
             <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-              {view.blackOpen
-                ? "Send it to your opponent — the first to open it plays Black."
-                : "Send to anyone who will be a spectator."}
+              Anyone with this token can watch the game.
             </div>
           </div>
         )}
