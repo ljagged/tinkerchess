@@ -17,7 +17,10 @@ See [`docs/` / the plan](#status) for the full ruleset.
   seat identity, persistence, and the fog-of-war boundary, delegating all rules to
   the engine. `getGameView` is the privacy boundary: it returns each caller only
   what they're allowed to see.
-- **frontend** — _(Step 3, not yet built)_ Next.js + react-chessboard.
+- **`app/`** — the Next.js (App Router) frontend. A `react-chessboard` driven by
+  `getGameView`, with the phasing UI, timers, and shareable links. The engine is
+  intentionally **not** bundled into the client — the server is authoritative and
+  the client only renders the filtered view it's given.
 
 ## Requirements
 
@@ -26,12 +29,21 @@ See [`docs/` / the plan](#status) for the full ruleset.
 
 ## Commands
 
+Run the app locally with **two processes** (Convex backend + Next.js):
+
 ```sh
-nvm use                 # select Node 22
+nvm use                 # select Node 22 (required by the Convex CLI)
 npm install
+npx convex dev          # terminal 1: dev deployment + regenerates convex/_generated
+npm run dev             # terminal 2: Next.js on http://localhost:3000
+```
+
+Other commands:
+
+```sh
 npm test                # engine unit tests + Convex functional tests (Vitest)
 npm run typecheck       # root + convex/ TypeScript
-npx convex dev          # run the dev deployment + regenerate convex/_generated
+npm run build           # production build
 ```
 
 ## Status
@@ -40,6 +52,9 @@ npx convex dev          # run the dev deployment + regenerate convex/_generated
 - ✅ **Step 2** — Convex schema + `createGame` / `joinGame` / `makeMove` /
   `phaseOut` / `getGameView`, delegating to the engine; functional tests at the
   API boundary.
-- ⬜ **Step 3** — Next.js board + phasing UI.
-- ⬜ **Step 4** — seats, shareable links, spectators, accounts.
+- ✅ **Step 3** — Next.js board + phasing UI (`app/`): create-game flow, a
+  `react-chessboard` driven by `getGameView`, drag-to-move, the phase-out flow
+  (pick piece + duration), own-timer overlay, opponent warning highlight, and a
+  shareable link. Verified by a live integration smoke against the deployment.
+- ⬜ **Step 4** — real accounts/auth on top of seat tokens; spectator polish.
 - ⬜ **Step 5** — history/replay, Elo, polish.

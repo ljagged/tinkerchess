@@ -4,3 +4,7 @@ dist
 *.log
 .env*.local
 coverage
+
+# Next.js
+.next
+*.tsbuildinfo

@@ -5,17 +5,27 @@
   "description": "Phase Chess — a fog-of-war chess variant. Pure rules engine (step 1).",
   "type": "module",
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "convex-test": "^0.0.53",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   },
   "dependencies": {
-    "convex": "^1.41.0"
+    "convex": "^1.41.0",
+    "next": "^14.2.35",
+    "react": "^18.3.1",
+    "react-chessboard": "^4.7.3",
+    "react-dom": "^18.3.1"
   }
 }
