@@ -29,6 +29,20 @@ function requireGame(game: Doc<"games"> | null): Doc<"games"> {
   return game;
 }
 
+/**
+ * Coerce a stored game's state into a full engine GameState. The wonBySelfCapture
+ * and lastEvent fields are stored optional (for games created before they
+ * existed); the engine treats their absence as the default.
+ */
+function engineState(game: Doc<"games">): engine.GameState {
+  const s = game.state;
+  return {
+    ...s,
+    wonBySelfCapture: s.wonBySelfCapture ?? false,
+    lastEvent: s.lastEvent ?? null,
+  };
+}
+
 /** Create a new game. The creator takes White and receives White's seat token. */
 export const createGame = mutation({
   args: {},
@@ -75,7 +89,7 @@ export const getGameView = query({
   handler: async (ctx, { gameId, seatToken }) => {
     const game = await ctx.db.get("games", gameId);
     if (!game) return null;
-    const view = engine.viewFor(game.state, viewerFromToken(game, seatToken));
+    const view = engine.viewFor(engineState(game), viewerFromToken(game, seatToken));
     // Surface seat availability so a player's invite text can update reactively
     // once the opponent has claimed Black (after which new openers spectate).
     return { ...view, blackOpen: !game.blackClaimed };
@@ -103,7 +117,7 @@ async function commit(
   action: engine.Action,
   recorded: Doc<"moves">["action"],
 ) {
-  const next = engine.applyAction(game.state, action); // throws on illegal action
+  const next = engine.applyAction(engineState(game), action); // throws on illegal action
   await ctx.db.patch("games", game._id, { state: next });
   await ctx.db.insert("moves", {
     gameId: game._id,
@@ -149,5 +163,27 @@ export const phaseOut = mutation({
       { kind: "phaseOut", phaseOut: phase },
       { kind: "phaseOut", ...phase },
     );
+  },
+});
+
+/**
+ * Reset an existing game to a fresh board, keeping the same seats and tokens so
+ * both players can play again at the same URL. Either player may trigger it.
+ */
+export const newGame = mutation({
+  args: { gameId: v.id("games"), seatToken: v.string() },
+  handler: async (ctx, { gameId, seatToken }) => {
+    const game = requireGame(await ctx.db.get("games", gameId));
+    if (viewerFromToken(game, seatToken) === "spectator") {
+      throw new Error("only a player can start a new game");
+    }
+    await ctx.db.patch("games", gameId, { state: engine.createGame() });
+    // Clear this game's move log so ply history restarts cleanly.
+    const moves = await ctx.db
+      .query("moves")
+      .withIndex("by_game_and_ply", (q) => q.eq("gameId", gameId))
+      .take(500);
+    for (const m of moves) await ctx.db.delete("moves", m._id);
+    return null;
   },
 });

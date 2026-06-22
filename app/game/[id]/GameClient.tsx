@@ -37,6 +37,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const joinGame = useMutation(api.games.joinGame);
   const makeMove = useMutation(api.games.makeMove);
   const phaseOut = useMutation(api.games.phaseOut);
+  const newGame = useMutation(api.games.newGame);
 
   const [seat, setSeat] = useState<Seat | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -152,26 +153,84 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
   };
 
+  const startNewGame = async () => {
+    if (!seat?.seatToken) return;
+    try {
+      await newGame({ gameId: id, seatToken: seat.seatToken });
+      setPhaseMode(false);
+      setPhaseFrom(null);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   const selectedType = phaseFrom !== null ? view.board[phaseFrom]?.type : undefined;
   const selectedMax = selectedType ? (MAX_PHASE[selectedType] ?? 1) : 1;
 
   // --- status text ---
+  const colorName = (c: "w" | "b") => (c === "w" ? "White" : "Black");
   let status: string;
   if (view.status === "active") {
     status = myTurn ? "Your move" : isPlayer ? "Opponent's move" : "Spectating";
   } else {
-    const youWon =
-      (view.status === "w_won" && myColor === "w") ||
-      (view.status === "b_won" && myColor === "b");
-    status = isPlayer
-      ? youWon
-        ? "You captured the king — you win!"
-        : "Your king was captured — you lose."
-      : `${view.status === "w_won" ? "White" : "Black"} won.`;
+    const winner = view.status === "w_won" ? "w" : "b";
+    const loser = winner === "w" ? "b" : "w";
+    const youWon = isPlayer && myColor === winner;
+    if (view.wonBySelfCapture) {
+      // The losing side captured their OWN king.
+      status = isPlayer
+        ? youWon
+          ? `${colorName(loser)} captured their own king — you win!`
+          : "You captured your own king — you lose."
+        : `${colorName(loser)} captured their own king — ${colorName(winner)} wins.`;
+    } else {
+      status = isPlayer
+        ? youWon
+          ? "You captured the king — you win!"
+          : "Your king was captured — you lose."
+        : `${colorName(winner)} won.`;
+    }
   }
+
+  // --- non-terminal self-capture notice ("X captured their own rook") ---
+  const ev = view.lastEvent;
+  const selfCaptureText =
+    view.status === "active" && ev
+      ? `${ev.by === myColor ? "You" : colorName(ev.by)} captured ${
+          ev.by === myColor ? "your" : "their"
+        } own ${(PIECE_NAME[ev.piece] ?? "piece").toLowerCase()} on ${idxToSquare(ev.square)}.`
+      : null;
 
   return (
     <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+      {view.status !== "active" && (
+        <div
+          className="panel"
+          style={{
+            gridColumn: "1 / -1",
+            textAlign: "center",
+            borderColor: "var(--accent)",
+            display: "grid",
+            gap: "0.9rem",
+            padding: "1.5rem",
+          }}
+        >
+          <div style={{ fontSize: "1.7rem", fontWeight: 700 }}>{status}</div>
+          {isPlayer && (
+            <div>
+              <button
+                className="primary"
+                style={{ fontSize: "1.05rem", padding: "0.6rem 1.5rem" }}
+                onClick={startNewGame}
+              >
+                New game
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div>
         <Chessboard
           id="phase-chess"
@@ -190,12 +249,19 @@ export function GameClient({ gameId }: { gameId: string }) {
 
       <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
         <div className="panel">
-          <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{status}</div>
-          <div className="muted" style={{ marginTop: "0.3rem" }}>
+          {/* When the game is over, the result lives in the banner above. */}
+          {view.status === "active" && (
+            <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{status}</div>
+          )}
+          <div className="muted" style={{ marginTop: view.status === "active" ? "0.3rem" : 0 }}>
             You are{" "}
             {myColor === "w" ? "White" : myColor === "b" ? "Black" : "a spectator"}.
           </div>
         </div>
+
+        {selfCaptureText && (
+          <div className="panel" style={{ color: "var(--danger)" }}>{selfCaptureText}</div>
+        )}
 
         {isPlayer && view.status === "active" && (
           <div className="panel">

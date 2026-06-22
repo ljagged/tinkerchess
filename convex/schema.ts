@@ -24,10 +24,20 @@ export const phasedPieceV = v.object({
   returnOn: v.number(),
 });
 
+export const selfCaptureEventV = v.object({
+  by: colorV,
+  piece: pieceTypeV,
+  square: v.number(),
+});
+
 export const gameStateV = v.object({
   board: v.array(v.union(pieceV, v.null())),
   turn: colorV,
   status: v.union(v.literal("active"), v.literal("w_won"), v.literal("b_won")),
+  // Optional for backward compatibility with games created before these fields
+  // existed; the engine always sets them on new/updated states.
+  wonBySelfCapture: v.optional(v.boolean()),
+  lastEvent: v.optional(v.union(selfCaptureEventV, v.null())),
   phased: v.array(phasedPieceV),
   castling: v.object({
     wK: v.boolean(),

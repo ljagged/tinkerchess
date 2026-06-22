@@ -25,6 +25,7 @@ import type {
   GameStatus,
   Move,
   Piece,
+  SelfCaptureEvent,
   SquareIndex,
 } from "./types.js";
 
@@ -57,6 +58,9 @@ export function applyAction(state: GameState, action: Action): GameState {
   } else {
     next = applyPhaseOut(state, action.phaseOut); // validates internally
   }
+
+  // The self-capture notice reflects only the action just applied.
+  next.lastEvent = null;
 
   // The action itself may have ended the game (king captured).
   next.turnsTaken[mover] += 1;
@@ -104,6 +108,10 @@ export interface GameView {
   board: (Piece | null)[];
   turn: Color;
   status: GameStatus;
+  /** When the game is over, whether the loser captured their own king. */
+  wonBySelfCapture: boolean;
+  /** Most recent non-terminal self-capture (visible to all), or null. */
+  lastEvent: SelfCaptureEvent | null;
   turnsTaken: { w: number; b: number };
   /** The viewer's seat, or "spectator". */
   you: Viewer;
@@ -128,6 +136,8 @@ export function viewFor(state: GameState, viewer: Viewer): GameView {
     board: state.board.slice(),
     turn: state.turn,
     status: state.status,
+    wonBySelfCapture: state.wonBySelfCapture,
+    lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
     turnsTaken: { ...state.turnsTaken },
     you: viewer,
     yourPhased: isPlayer

@@ -47,12 +47,30 @@ export interface CastlingRights {
 
 export type GameStatus = "active" | "w_won" | "b_won";
 
+/** A non-terminal "footgun": a phase-in removed one of the owner's OWN pieces. */
+export interface SelfCaptureEvent {
+  by: Color;
+  piece: PieceType;
+  square: SquareIndex;
+}
+
 export interface GameState {
   /** 64 squares; holds only IN-PLAY pieces. Phased pieces are absent here. */
   board: (Piece | null)[];
   /** Whose turn it is to act. */
   turn: Color;
   status: GameStatus;
+  /**
+   * True when the game ended because the losing side captured their OWN king
+   * (a phase-in landing on it) rather than the winner capturing it.
+   */
+  wonBySelfCapture: boolean;
+  /**
+   * The most recent non-terminal self-capture, or null. Reflects only the most
+   * recently applied action (cleared each turn). Used to surface "X captured
+   * their own rook" to both players.
+   */
+  lastEvent: SelfCaptureEvent | null;
   /** Pieces currently phased out, for both colors. */
   phased: PhasedPiece[];
   castling: CastlingRights;

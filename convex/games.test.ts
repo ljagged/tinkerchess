@@ -117,4 +117,29 @@ describe("games API", () => {
     });
     expect(after!.blackOpen).toBe(false);
   });
+
+  it("newGame resets the board to the start, and only players may call it", async () => {
+    const t = convexTest(schema, modules);
+    const white = await t.mutation(api.games.createGame, {});
+    await t.mutation(api.games.makeMove, {
+      gameId: white.gameId,
+      seatToken: white.seatToken,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+
+    // A spectator (unrecognized token) cannot reset.
+    await expect(
+      t.mutation(api.games.newGame, { gameId: white.gameId, seatToken: "bogus" }),
+    ).rejects.toThrow();
+
+    await t.mutation(api.games.newGame, { gameId: white.gameId, seatToken: white.seatToken });
+    const view = await t.query(api.games.getGameView, {
+      gameId: white.gameId,
+      seatToken: white.seatToken,
+    });
+    expect(view!.turn).toBe("w");
+    expect(view!.board[parseSquare("e2")]).toEqual({ color: "w", type: "p" }); // pawn home again
+    expect(view!.board[parseSquare("e4")]).toBeNull();
+  });
 });

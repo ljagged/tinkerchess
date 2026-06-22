@@ -25,6 +25,8 @@ function emptyState(turn: Color = "w"): GameState {
     board: new Array<Piece | null>(64).fill(null),
     turn,
     status: "active",
+    wonBySelfCapture: false,
+    lastEvent: null,
     phased: [],
     castling: { wK: false, wQ: false, bK: false, bQ: false },
     enPassant: null,
@@ -155,19 +157,27 @@ describe("phase-in resolution", () => {
     expect(next.status).toBe("active");
   });
 
-  it("removes an occupant of ANY color (self-capture)", () => {
-    const next = resolvePhaseIns(returningRook(P("w", "p")), "w");
-    expect(at(next, "a1")).toEqual(P("w", "r")); // own pawn was removed
+  it("removes an occupant of ANY color (self-capture) and records the footgun", () => {
+    const next = resolvePhaseIns(returningRook(P("w", "r")), "w");
+    expect(at(next, "a1")).toEqual(P("w", "r")); // own rook was removed
+    expect(next.lastEvent).toEqual({ by: "w", piece: "r", square: parseSquare("a1") });
   });
 
-  it("wins by removing the ENEMY king on phase-in", () => {
+  it("does not record a self-capture event when capturing an enemy piece", () => {
+    const next = resolvePhaseIns(returningRook(P("b", "n")), "w");
+    expect(next.lastEvent).toBeNull();
+  });
+
+  it("wins by removing the ENEMY king on phase-in (not a self-capture)", () => {
     const next = resolvePhaseIns(returningRook(P("b", "k")), "w");
     expect(next.status).toBe("w_won");
+    expect(next.wonBySelfCapture).toBe(false);
   });
 
-  it("loses by removing your OWN king on phase-in", () => {
+  it("loses by removing your OWN king on phase-in (a footgun)", () => {
     const next = resolvePhaseIns(returningRook(P("w", "k")), "w");
     expect(next.status).toBe("b_won");
+    expect(next.wonBySelfCapture).toBe(true);
   });
 });
 
