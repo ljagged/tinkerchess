@@ -270,28 +270,33 @@ export function GameClient({ gameId }: { gameId: string }) {
           </div>
         )}
 
-        <div className="panel">
-          <strong>Share this game</strong>
-          <div className="row" style={{ marginTop: "0.5rem" }}>
-            <input
-              readOnly
-              value={shareUrl}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                padding: "0.45rem 0.5rem",
-                borderRadius: 8,
-                border: "1px solid var(--border)",
-                background: "var(--bg)",
-                color: "var(--text)",
-              }}
-            />
-            <button onClick={() => navigator.clipboard?.writeText(shareUrl)}>Copy</button>
+        {/* Only players can invite — spectators don't see the link at all. */}
+        {isPlayer && (
+          <div className="panel">
+            <strong>Share this game</strong>
+            <div className="row" style={{ marginTop: "0.5rem" }}>
+              <input
+                readOnly
+                value={shareUrl}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  padding: "0.45rem 0.5rem",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                }}
+              />
+              <button onClick={() => navigator.clipboard?.writeText(shareUrl)}>Copy</button>
+            </div>
+            <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+              {view.blackOpen
+                ? "Send it to your opponent — the first to open it plays Black."
+                : "Send to anyone who will be a spectator."}
+            </div>
           </div>
-          <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-            Send it to your opponent — the first to open it plays Black.
-          </div>
-        </div>
+        )}
 
         {error && <div className="panel" style={{ color: "var(--danger)" }}>{error}</div>}
       </aside>

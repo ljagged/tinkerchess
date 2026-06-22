@@ -75,7 +75,10 @@ export const getGameView = query({
   handler: async (ctx, { gameId, seatToken }) => {
     const game = await ctx.db.get("games", gameId);
     if (!game) return null;
-    return engine.viewFor(game.state, viewerFromToken(game, seatToken));
+    const view = engine.viewFor(game.state, viewerFromToken(game, seatToken));
+    // Surface seat availability so a player's invite text can update reactively
+    // once the opponent has claimed Black (after which new openers spectate).
+    return { ...view, blackOpen: !game.blackClaimed };
   },
 });
 

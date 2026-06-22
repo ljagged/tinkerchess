@@ -100,4 +100,21 @@ describe("games API", () => {
     expect(spectator!.yourPhased).toHaveLength(0);
     expect(spectator!.warningSquares).toHaveLength(0);
   });
+
+  it("reports the black seat open until it is claimed (invite state)", async () => {
+    const t = convexTest(schema, modules);
+    const white = await t.mutation(api.games.createGame, {});
+    const before = await t.query(api.games.getGameView, {
+      gameId: white.gameId,
+      seatToken: white.seatToken,
+    });
+    expect(before!.blackOpen).toBe(true);
+
+    await t.mutation(api.games.joinGame, { gameId: white.gameId });
+    const after = await t.query(api.games.getGameView, {
+      gameId: white.gameId,
+      seatToken: white.seatToken,
+    });
+    expect(after!.blackOpen).toBe(false);
+  });
 });
