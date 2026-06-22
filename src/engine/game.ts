@@ -112,6 +112,8 @@ export interface GameView {
   wonBySelfCapture: boolean;
   /** Most recent non-terminal self-capture (visible to all), or null. */
   lastEvent: SelfCaptureEvent | null;
+  /** Permanently captured pieces per color (the captured piece's color). */
+  captured: { w: Piece["type"][]; b: Piece["type"][] };
   turnsTaken: { w: number; b: number };
   /** The viewer's seat, or "spectator". */
   you: Viewer;
@@ -138,6 +140,7 @@ export function viewFor(state: GameState, viewer: Viewer): GameView {
     status: state.status,
     wonBySelfCapture: state.wonBySelfCapture,
     lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
+    captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
     turnsTaken: { ...state.turnsTaken },
     you: viewer,
     yourPhased: isPlayer

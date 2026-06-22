@@ -65,6 +65,7 @@ export function initialState(): GameState {
     castling: { wK: true, wQ: true, bK: true, bQ: true },
     enPassant: null,
     turnsTaken: { w: 0, b: 0 },
+    captured: { w: [], b: [] },
   };
 }
 
@@ -79,6 +80,7 @@ export function cloneState(state: GameState): GameState {
     castling: { ...state.castling },
     enPassant: state.enPassant,
     turnsTaken: { ...state.turnsTaken },
+    captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
   };
 }
 

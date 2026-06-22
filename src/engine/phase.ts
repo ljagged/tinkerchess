@@ -110,6 +110,7 @@ export function resolvePhaseIns(state: GameState, color: Color): GameState {
     }
     const occupant = pieceAt(next.board, piece.origin);
     next.board[piece.origin] = { color: piece.color, type: piece.type };
+    if (occupant) next.captured[occupant.color].push(occupant.type);
     if (occupant && occupant.type === "k") {
       // The reappearing piece removed a king. Owner of the removed king loses;
       // it's a footgun if the reappearing piece belonged to that same side.

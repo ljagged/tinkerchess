@@ -78,6 +78,12 @@ export interface GameState {
   enPassant: SquareIndex | null;
   /** Completed turns per color. Incremented when a player finishes an action. */
   turnsTaken: { w: number; b: number };
+  /**
+   * Pieces that have been permanently captured, keyed by the CAPTURED piece's
+   * color (so `captured.w` is White's losses). Phased pieces are NOT captured —
+   * they never appear here — so this reveals nothing about return timers.
+   */
+  captured: { w: PieceType[]; b: PieceType[] };
 }
 
 /** A normal chess move. `promotion` is required only when a pawn reaches the last rank. */

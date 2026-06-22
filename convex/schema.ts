@@ -47,6 +47,8 @@ export const gameStateV = v.object({
   }),
   enPassant: v.union(v.number(), v.null()),
   turnsTaken: v.object({ w: v.number(), b: v.number() }),
+  // Optional for back-compat; the engine always sets it on new/updated states.
+  captured: v.optional(v.object({ w: v.array(pieceTypeV), b: v.array(pieceTypeV) })),
 });
 
 export const recordedActionV = v.union(

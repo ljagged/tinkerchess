@@ -252,6 +252,10 @@ export function applyMove(state: GameState, move: Move): GameState {
       ? squareIndex(fromFile, (rankOf(move.from) + rankOf(move.to)) / 2)
       : null;
 
+  // Record captured pieces (normal capture and/or en passant).
+  if (captured) next.captured[captured.color].push(captured.type);
+  if (enPassantCapture) next.captured[enPassantCapture.color].push(enPassantCapture.type);
+
   // Win by king capture (normal or en-passant — though a king is never taken en passant).
   const king = captured ?? enPassantCapture;
   if (king && king.type === "k") {

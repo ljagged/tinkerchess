@@ -82,6 +82,7 @@ function engineState(game: Doc<"games">): engine.GameState {
     ...s,
     wonBySelfCapture: s.wonBySelfCapture ?? false,
     lastEvent: s.lastEvent ?? null,
+    captured: s.captured ?? { w: [], b: [] },
   };
 }
 

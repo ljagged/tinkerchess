@@ -31,6 +31,7 @@ function emptyState(turn: Color = "w"): GameState {
     castling: { wK: false, wQ: false, bK: false, bQ: false },
     enPassant: null,
     turnsTaken: { w: 0, b: 0 },
+    captured: { w: [], b: [] },
   };
 }
 
@@ -96,6 +97,32 @@ describe("win condition: capture the king", () => {
     });
     expect(next.status).toBe("w_won");
     expect(at(next, "d8")).toEqual(P("w", "q"));
+  });
+});
+
+// --- captured-piece tracking -----------------------------------------------
+
+describe("captured pieces", () => {
+  it("records a normal capture under the captured piece's color", () => {
+    const s = emptyState("w");
+    put(s, "d4", P("w", "b"));
+    put(s, "g7", P("b", "p"));
+    const next = applyAction(s, {
+      kind: "move",
+      move: { from: parseSquare("d4"), to: parseSquare("g7") },
+    });
+    expect(next.captured.b).toEqual(["p"]);
+    expect(next.captured.w).toEqual([]);
+  });
+
+  it("records a phase-in capture but never the phased piece itself", () => {
+    const s = emptyState("w");
+    s.turnsTaken.w = 1;
+    s.phased.push({ color: "w", type: "r", origin: parseSquare("a1"), returnOn: 1 });
+    put(s, "a1", P("b", "n")); // an enemy knight sitting on the rook's return square
+    const next = resolvePhaseIns(s, "w");
+    expect(next.captured.b).toEqual(["n"]); // the knight was captured
+    expect(next.captured.w).toEqual([]); // the returning rook is not "captured"
   });
 });
 

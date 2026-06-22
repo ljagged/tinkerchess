@@ -33,6 +33,52 @@ const PIECE_NAME: Record<string, string> = {
   k: "King",
 };
 
+const GLYPH: Record<string, string> = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
+// Sort order by value: pawn < knight < bishop < rook < queen (bishop just over knight).
+const VALUE_ORDER: Record<string, number> = { p: 0, n: 1, b: 2, r: 3, q: 4 };
+
+/**
+ * A fixed-height strip of captured pieces (half-size, value-sorted, kings
+ * omitted). Height is reserved even when empty so the board never shifts.
+ */
+function CapturedTray({
+  pieces,
+  color,
+  glyphSize,
+}: {
+  pieces: string[];
+  color: "w" | "b";
+  glyphSize: number;
+}) {
+  const sorted = pieces
+    .filter((t) => t !== "k")
+    .sort((a, b) => (VALUE_ORDER[a] ?? 0) - (VALUE_ORDER[b] ?? 0));
+  return (
+    <div
+      style={{
+        minHeight: glyphSize * 1.15,
+        display: "flex",
+        alignItems: "center",
+        flexWrap: "wrap",
+        padding: "0 0.25rem",
+      }}
+    >
+      {sorted.map((t, i) => (
+        <span
+          key={i}
+          style={{
+            fontSize: glyphSize,
+            lineHeight: 1,
+            color: color === "w" ? "#efe8df" : "#6f6358",
+          }}
+        >
+          {GLYPH[t]}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -228,6 +274,13 @@ export function GameClient({ gameId }: { gameId: string }) {
         } own ${(PIECE_NAME[ev.piece] ?? "piece").toLowerCase()} on ${idxToSquare(ev.square)}.`
       : null;
 
+  // Captured-piece trays. Each player's captures sit behind their own back rank:
+  // the bottom player's (their captures of the opponent) below the board, the
+  // top player's above it. captured[X] holds X's lost pieces.
+  const bottomColor: "w" | "b" = myColor === "b" ? "b" : "w";
+  const topColor: "w" | "b" = bottomColor === "w" ? "b" : "w";
+  const glyphSize = Math.round(boardWidth / 14);
+
   return (
     <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
       {view.status !== "active" && (
@@ -257,7 +310,9 @@ export function GameClient({ gameId }: { gameId: string }) {
         </div>
       )}
 
-      <div>
+      <div style={{ width: boardWidth }}>
+        {/* Top tray: pieces the top player captured (the bottom player's losses). */}
+        <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
         <Chessboard
           id="phase-chess"
           position={position as BoardProps["position"]}
@@ -271,6 +326,8 @@ export function GameClient({ gameId }: { gameId: string }) {
           customSquareStyles={styles as BoardProps["customSquareStyles"]}
           customBoardStyle={{ borderRadius: "8px" }}
         />
+        {/* Bottom tray: pieces the bottom player captured (the top player's losses). */}
+        <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
       </div>
 
       <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>

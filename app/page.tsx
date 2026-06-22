@@ -1,11 +1,12 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/convex/_generated/api";
-import { saveSeat } from "./seat";
-import { ChunkedTokenInput } from "./token";
+import type { Id } from "@/convex/_generated/dataModel";
+import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
+import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
 
 export default function Home() {
   const createGame = useMutation(api.games.createGame);
@@ -19,16 +20,48 @@ export default function Home() {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [spectatorGame, setSpectatorGame] = useState<string | null>(null);
 
+  // A game the initiator created and is waiting on. We stay on the splash and
+  // only go to the board once an opponent joins (so they never see the board —
+  // or a color that might flip — before the game actually starts).
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  useEffect(() => setPendingId(loadPending()), []);
+
+  const pendingSeat = pendingId ? loadSeat(pendingId) : null;
+  const pendingView = useQuery(
+    api.games.getGameView,
+    pendingId && pendingSeat
+      ? { gameId: pendingId as Id<"games">, seatToken: pendingSeat.seatToken ?? undefined }
+      : "skip",
+  );
+
+  useEffect(() => {
+    if (!pendingId || pendingView === undefined) return;
+    if (pendingView === null) {
+      clearPending();
+      setPendingId(null);
+    } else if (pendingView.phase === "active") {
+      clearPending();
+      router.push(`/game/${pendingId}`);
+    }
+  }, [pendingId, pendingView, router]);
+
   const onNewGame = async () => {
     setBusy(true);
     try {
       const { gameId, seatToken } = await createGame({});
       saveSeat(gameId, { seatToken });
-      router.push(`/game/${gameId}`);
+      savePending(gameId);
+      setPendingId(gameId);
     } catch (e) {
-      setBusy(false);
       alert(`Could not create a game: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const cancelWaiting = () => {
+    clearPending();
+    setPendingId(null);
   };
 
   const openJoin = () => {
@@ -49,7 +82,6 @@ export default function Home() {
       const { gameId, role, seatToken } = await joinByToken({ token });
       saveSeat(gameId, { seatToken });
       if (role === "spectator") {
-        // Inform the user before sending them in as a spectator.
         setJoining(false);
         setSpectatorGame(gameId);
         return;
@@ -60,6 +92,32 @@ export default function Home() {
       setJoinError((e as Error).message);
     }
   };
+
+  // --- waiting room (stays on the splash) ---
+  if (pendingId && pendingView && pendingView.phase === "waiting") {
+    const code = pendingView.joinToken ? formatToken(pendingView.joinToken) : "";
+    return (
+      <main className="wrap">
+        <h1 style={{ marginBottom: "0.25rem" }}>Phase Chess</h1>
+        <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 460, display: "grid", gap: "0.9rem", borderColor: "var(--accent)" }}>
+          <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>Waiting for opponent to join…</div>
+          <div className="muted">Share this token with your opponent:</div>
+          <div className="row" style={{ alignItems: "center", gap: "0.7rem" }}>
+            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: "1.8rem", letterSpacing: "0.15em" }}>
+              {code}
+            </span>
+            <CopyButton text={code} />
+          </div>
+          <div className="muted" style={{ fontSize: "0.85rem" }}>
+            Sides are chosen at random when they join. You’ll go to the board automatically.
+          </div>
+          <div>
+            <button onClick={cancelWaiting}>Cancel</button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="wrap">
