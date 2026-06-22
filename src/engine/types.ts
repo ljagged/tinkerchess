@@ -29,9 +29,11 @@ export interface PhasedPiece {
   /** Square the piece left and will reappear on. */
   origin: SquareIndex;
   /**
-   * The owner's turn ordinal on which the piece phases back in. An ordinal is
-   * "how many turns this color will have started"; a color's current turn
-   * ordinal while acting is turnsTaken[color] + 1.
+   * The owner's turn count at the END of which the piece phases back in. The
+   * piece returns once the owner has completed `returnOn` turns, i.e. when
+   * turnsTaken[owner] reaches this value. So phasing on the owner's turn k for
+   * duration d sets returnOn = k + d, and the piece is absent across the owner's
+   * turns k+1 … k+d, reappearing at the end of turn k+d.
    */
   returnOn: number;
 }

@@ -139,8 +139,10 @@ describe("phase-out validation", () => {
 
 describe("phase-in resolution", () => {
   function returningRook(occupant: Piece | null): GameState {
-    // A white rook phased from a1, due to return on white's next turn.
+    // A white rook phased from a1, due at the end of White's turn 1 (resolve
+    // happens once turnsTaken.w reaches returnOn).
     const s = emptyState("w");
+    s.turnsTaken.w = 1;
     s.phased.push({ color: "w", type: "r", origin: parseSquare("a1"), returnOn: 1 });
     if (occupant) put(s, "a1", occupant);
     return s;
@@ -184,19 +186,45 @@ describe("owner-turn timer counting", () => {
   const move = (from: string, to: string) =>
     ({ kind: "move", move: { from: parseSquare(from), to: parseSquare(to) } }) as const;
 
-  it("returns a piece on the owner's d-th subsequent turn (queen, d=2)", () => {
+  it("returns a piece at the END of the owner's d-th subsequent turn (queen, d=2)", () => {
     let s = shuffleBoard();
     // White turn 1: phase the queen out for 2.
     s = applyAction(s, { kind: "phaseOut", phaseOut: { from: parseSquare("d1"), duration: 2 } });
     expect(at(s, "d1")).toBeNull();
 
     s = applyAction(s, move("g8", "f6")); // black
-    s = applyAction(s, move("g1", "f3")); // white turn 2 — still phased
+    s = applyAction(s, move("g1", "f3")); // white turn 2 — still out (White plays with it gone)
     expect(at(s, "d1")).toBeNull();
 
-    s = applyAction(s, move("f6", "g8")); // black -> flips to white turn 3
-    expect(at(s, "d1")).toEqual(P("w", "q")); // returned automatically
+    s = applyAction(s, move("f6", "g8")); // black -> White to move for turn 3; still out
+    expect(at(s, "d1")).toBeNull();
+
+    s = applyAction(s, move("f3", "g1")); // white turn 3 — returns at the END of this turn
+    expect(at(s, "d1")).toEqual(P("w", "q"));
     expect(s.phased).toHaveLength(0);
+  });
+
+  it("lets the owner exploit the open square for a full turn (duration 1)", () => {
+    // The user's scenario: phase a bishop for 1, opponent moves, and the bishop
+    // is STILL out during the owner's next turn (so the owner can use the open
+    // square), returning only at the end of that turn.
+    const s = emptyState("w");
+    put(s, "c1", P("w", "b"));
+    put(s, "e1", P("w", "k"));
+    put(s, "h1", P("w", "r"));
+    put(s, "e8", P("b", "k"));
+    put(s, "a8", P("b", "r"));
+
+    let g: GameState = s;
+    g = applyAction(g, { kind: "phaseOut", phaseOut: { from: parseSquare("c1"), duration: 1 } });
+    g = applyAction(g, move("a8", "a7")); // black
+
+    // White's turn: the bishop is still off-board — the square is open to use.
+    expect(at(g, "c1")).toBeNull();
+    g = applyAction(g, move("h1", "g1")); // white plays its exploit turn
+    // ...and the bishop returns at the end of it.
+    expect(at(g, "c1")).toEqual(P("w", "b"));
+    expect(g.phased).toHaveLength(0);
   });
 
   it("shows the opponent a square-only warning exactly one of their turns before return", () => {

@@ -4,14 +4,16 @@
 // Turn lifecycle for each action:
 //   1. The side to move applies a move or a phase-out (board mechanics).
 //   2. If that captured the enemy king, the game ends here.
-//   3. Otherwise the turn counter for the mover increments and the turn flips.
-//   4. At the start of the new player's turn, their due phase-ins resolve
-//      (which may itself end the game by removing a king).
+//   3. Otherwise the mover's turn counter increments and any of the MOVER's due
+//      pieces phase back in — at the END of their turn (which may itself end the
+//      game by removing a king).
+//   4. The turn flips to the opponent.
 //
-// resolvePhaseIns at the *start* of a turn is what implements "the piece
-// reappears automatically and you still make your normal move that turn":
-// after this returns, the new current player has their returned pieces back and
-// then submits their own action.
+// Phase-in resolves at the END of the owner's turn (not the start) so the owner
+// gets to play the turn with the piece still out and exploit the open space.
+// A piece phased for duration d is therefore absent across d of the owner's own
+// turns and reappears at the end of the d-th one. (Resolving at the start would
+// make a duration of 1 pointless — the piece would return before the owner moved.)
 
 import { cloneState, initialState, pieceAt } from "./board.js";
 import { applyMove, generateMoves, isLegalMove } from "./moves.js";
@@ -60,9 +62,12 @@ export function applyAction(state: GameState, action: Action): GameState {
   next.turnsTaken[mover] += 1;
   if (next.status !== "active") return next;
 
+  // End-of-turn phase-ins for the mover (may end the game by removing a king).
+  next = resolvePhaseIns(next, mover);
+  if (next.status !== "active") return next;
+
   next.turn = mover === "w" ? "b" : "w";
-  // Start-of-turn phase-ins for the player about to act.
-  return resolvePhaseIns(next, next.turn);
+  return next;
 }
 
 function ownsPiece(state: GameState, sq: SquareIndex, color: Color): boolean {

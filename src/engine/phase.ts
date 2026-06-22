@@ -68,8 +68,8 @@ export function applyPhaseOut(state: GameState, action: PhaseOut): GameState {
   const next = cloneState(state);
   const piece = pieceAt(next.board, action.from)!;
   const owner = piece.color;
-  // Current turn ordinal for the owner is turnsTaken+1; it returns `duration`
-  // of the owner's turns later.
+  // This is the owner's (turnsTaken+1)-th turn; the piece reappears at the END
+  // of their turn `duration` later, i.e. after they complete that many turns.
   const returnOn = next.turnsTaken[owner] + 1 + action.duration;
 
   next.board[action.from] = null;
@@ -83,18 +83,20 @@ export function applyPhaseOut(state: GameState, action: PhaseOut): GameState {
 }
 
 /**
- * Resolve any phase-ins due for `color` at the start of their turn. Mutates a
- * cloned copy and returns it. If a king is removed by a phase-in, the game ends
- * immediately.
+ * Resolve any phase-ins due for `color` at the END of their turn — i.e. after
+ * the turn counter has been incremented, so `returnOn === turnsTaken[color]`
+ * means "due now". Resolving at the end (not the start) of the turn lets the
+ * owner play the turn with the piece out before it returns. Mutates a cloned
+ * copy and returns it. If a king is removed by a phase-in, the game ends.
  */
 export function resolvePhaseIns(state: GameState, color: Color): GameState {
-  const ordinal = state.turnsTaken[color] + 1;
-  const anyDue = state.phased.some((p) => p.color === color && p.returnOn <= ordinal);
+  const completed = state.turnsTaken[color];
+  const anyDue = state.phased.some((p) => p.color === color && p.returnOn <= completed);
   if (!anyDue) return state;
 
   const next = cloneState(state);
   // Filter from the CLONE so the references match next.phased for removal.
-  const due = next.phased.filter((p) => p.color === color && p.returnOn <= ordinal);
+  const due = next.phased.filter((p) => p.color === color && p.returnOn <= completed);
   // Deterministic order: earliest timer first, then insertion order.
   due.sort((a, b) => a.returnOn - b.returnOn);
 
@@ -121,20 +123,24 @@ function removePhased(phased: PhasedPiece[], target: PhasedPiece): void {
   if (idx >= 0) phased.splice(idx, 1);
 }
 
-/** The viewer's own phased pieces, with turns remaining until each returns. */
+/**
+ * The viewer's own phased pieces, with how many of the viewer's own turns
+ * remain until each returns (it reappears at the end of that turn). A piece due
+ * at the end of the viewer's next turn shows 1.
+ */
 export function ownPhased(
   state: GameState,
   viewer: Color,
 ): Array<PhasedPiece & { turnsRemaining: number }> {
   return state.phased
     .filter((p) => p.color === viewer)
-    .map((p) => ({ ...p, turnsRemaining: p.returnOn - (state.turnsTaken[viewer] + 1) }));
+    .map((p) => ({ ...p, turnsRemaining: p.returnOn - state.turnsTaken[viewer] }));
 }
 
 /**
  * Squares the viewer should see highlighted as a one-turn warning: origin
- * squares of the OPPONENT's pieces that will phase back in on the opponent's
- * very next turn. Reveals the square only — never the piece identity.
+ * squares of the OPPONENT's pieces that will phase back in at the end of the
+ * opponent's next turn. Reveals the square only — never the piece identity.
  */
 export function warningSquaresFor(state: GameState, viewer: Color): SquareIndex[] {
   return state.phased
