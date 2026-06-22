@@ -245,7 +245,11 @@ export function GameClient({ gameId }: { gameId: string }) {
   const colorName = (c: "w" | "b") => (c === "w" ? "White" : "Black");
   let status: string;
   if (view.status === "active") {
-    status = myTurn ? "Your move" : isPlayer ? "Opponent's move" : "Spectating";
+    status = myTurn
+      ? "Your move"
+      : isPlayer
+        ? "Opponent's move"
+        : `${colorName(view.turn)} to move`;
   } else {
     const winner = view.status === "w_won" ? "w" : "b";
     const loser = winner === "w" ? "b" : "w";
