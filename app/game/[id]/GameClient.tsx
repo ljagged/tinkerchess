@@ -540,6 +540,16 @@ export function GameClient({ gameId }: { gameId: string }) {
     styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected
   }
 
+  // Coordinate gutters (DESIGN.md) — labels outside the board, orientation-aware.
+  const orient: "white" | "black" = myColor === "b" ? "black" : "white";
+  const rankLabels = orient === "black"
+    ? ["1", "2", "3", "4", "5", "6", "7", "8"]
+    : ["8", "7", "6", "5", "4", "3", "2", "1"];
+  const fileLabels = orient === "black"
+    ? ["h", "g", "f", "e", "d", "c", "b", "a"]
+    : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const GUTTER = 20;
+
   // --- handlers ---
   const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target, piece) => {
     if (!myTurn || !seat.seatToken || phaseMode) return false;
@@ -678,15 +688,29 @@ export function GameClient({ gameId }: { gameId: string }) {
         </div>
       )}
 
-      <div style={{ width: boardWidth }}>
-        {/* Top tray: pieces the top player captured (the bottom player's losses). */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `${GUTTER}px ${boardWidth}px`,
+          gridTemplateRows: `auto ${boardWidth}px ${GUTTER}px auto`,
+        }}
+      >
+        {/* row 1: corner + top tray (pieces the top player captured) */}
+        <div />
         <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
+        {/* row 2: rank gutter + board */}
+        <div className="board-ranks">
+          {rankLabels.map((r) => (
+            <span key={r}>{r}</span>
+          ))}
+        </div>
         <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
           <Chessboard
             id="phase-chess"
             position={position as BoardProps["position"]}
             boardWidth={boardWidth}
-            boardOrientation={myColor === "b" ? "black" : "white"}
+            boardOrientation={orient}
+            showBoardNotation={false}
             arePiecesDraggable={myTurn && !phaseMode}
             isDraggablePiece={({ piece }) => myTurn && !phaseMode && piece[0] === myColor}
             onPieceDrop={onPieceDrop}
@@ -700,13 +724,21 @@ export function GameClient({ gameId }: { gameId: string }) {
           />
           <BoardOverlay
             boardWidth={boardWidth}
-            orientation={myColor === "b" ? "black" : "white"}
+            orientation={orient}
             phased={view.yourPhased}
             warnings={view.warningSquares}
             color={myColor === "b" ? "b" : "w"}
           />
         </div>
-        {/* Bottom tray: pieces the bottom player captured (the top player's losses). */}
+        {/* row 3: corner + file gutter */}
+        <div />
+        <div className="board-files">
+          {fileLabels.map((f) => (
+            <span key={f}>{f}</span>
+          ))}
+        </div>
+        {/* row 4: corner + bottom tray (pieces the bottom player captured) */}
+        <div />
         <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
       </div>
 
