@@ -911,6 +911,50 @@ export function GameClient({ gameId }: { gameId: string }) {
       )}
 
       <div className="game-grid">
+        {/* HEADER BAND — sits above the three aligned columns (phased / board /
+            chat). Left header is empty; center holds Opponent + captured material;
+            right holds the rules/spectator icons. This is what lines up the tops. */}
+        <div className="col-head head-spacer" />
+        <div className="col-head board-head">
+          <div className="board-stack-head" style={{ width: GUTTER + boardWidth }}>
+            <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
+              <span className="who">
+                Opponent
+                {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
+              </span>
+              <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
+            </div>
+          </div>
+        </div>
+        <div className="col-head rail-head">
+          <div className="rail-tools">
+            <IconPopover icon="?" label="Rules" align="left">
+              <strong>Phasing rules</strong>
+              <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
+                {phaseable.length === 0
+                  ? "No pieces can phase."
+                  : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
+              </div>
+              <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                Right-click a piece to phase it out. It returns to its square after the
+                chosen number of your turns, removing whatever sits there. Capture the king to win.
+              </div>
+            </IconPopover>
+            {view.joinToken && (
+              <IconPopover icon="⤴" label="Invite spectators" align="left">
+                <strong>Invite spectators</strong>
+                <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
+                  <span className="token-code">{formatToken(view.joinToken)}</span>
+                  <CopyButton text={formatToken(view.joinToken)} />
+                </div>
+                <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+                  Anyone with this token can watch.
+                </div>
+              </IconPopover>
+            )}
+          </div>
+        </div>
+
         {/* LEFT RAIL — gameplay info: phased pieces (top), then the move list. */}
         <aside className="rail rail-left">
           {isPlayer && (
@@ -932,17 +976,9 @@ export function GameClient({ gameId }: { gameId: string }) {
           />
         </aside>
 
-        {/* CENTER — the board, with player rows, captured trays, and turn stripe. */}
+        {/* CENTER — the board, then your player row + captured material below it. */}
         <section className="board-col" ref={setBoardCol}>
           <div className="board-stack" style={{ width: GUTTER + boardWidth }}>
-            <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
-              <span className="who">
-                Opponent
-                {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
-              </span>
-              <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
-            </div>
-
             <div
               className="board-frame"
               style={{
@@ -1023,34 +1059,8 @@ export function GameClient({ gameId }: { gameId: string }) {
           <span className="sr-only" aria-live="polite">{status}</span>
         </section>
 
-        {/* RIGHT RAIL — communication + discreet tools (rules, spectator invite). */}
+        {/* RIGHT RAIL — communication (the tool icons live in the header above). */}
         <aside className="rail rail-right">
-          <div className="rail-tools">
-            <IconPopover icon="?" label="Rules" align="left">
-              <strong>Phasing rules</strong>
-              <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
-                {phaseable.length === 0
-                  ? "No pieces can phase."
-                  : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
-              </div>
-              <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-                Right-click a piece to phase it out. It returns to its square after the
-                chosen number of your turns, removing whatever sits there. Capture the king to win.
-              </div>
-            </IconPopover>
-            {view.joinToken && (
-              <IconPopover icon="⤴" label="Invite spectators" align="left">
-                <strong>Invite spectators</strong>
-                <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
-                  <span className="token-code">{formatToken(view.joinToken)}</span>
-                  <CopyButton text={formatToken(view.joinToken)} />
-                </div>
-                <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-                  Anyone with this token can watch.
-                </div>
-              </IconPopover>
-            )}
-          </div>
           {isPlayer && seat.seatToken && <Chat gameId={id} seatToken={seat.seatToken} />}
         </aside>
       </div>
