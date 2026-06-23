@@ -148,7 +148,12 @@ export default defineSchema({
     byColor: colorV,
     action: recordedActionV,
     events: v.optional(v.array(gameEventV)),
-  }).index("by_game_and_ply", ["gameId", "ply"]),
+    // Client-supplied idempotency key: a retried submission (same key) is a no-op
+    // instead of a double-apply. Optional for back-compat.
+    requestId: v.optional(v.string()),
+  })
+    .index("by_game_and_ply", ["gameId", "ply"])
+    .index("by_request", ["gameId", "requestId"]),
 
   // Immutable archive of finished games. A rematch (newGame) recycles the `games`
   // row, so completed games are snapshotted here instead of being destroyed. A

@@ -325,7 +325,9 @@ export const getMatchReplay = query({
   },
 });
 
-/** Resolve the acting seat and verify it is that seat's turn. */
+/** Resolve the acting seat (a player, not a spectator). Turn order is enforced in
+ * commit() — AFTER the idempotency check, so a retried submission whose move already
+ * applied (turn since flipped) is a graceful no-op rather than a "not your turn" error. */
 async function actingSeat(
   ctx: MutationCtx,
   gameId: Id<"games">,
@@ -334,18 +336,43 @@ async function actingSeat(
   const game = requireGame(await ctx.db.get("games", gameId));
   const viewer = viewerFromToken(game, seatToken);
   if (viewer === "spectator") throw new Error("not a player in this game");
-  if (game.state.turn !== viewer) throw new Error("not your turn");
   return { game, color: viewer };
 }
 
-/** Apply an action, persist the new state, append to the move log, return the actor's view. */
+/**
+ * Apply an action, persist the new state, append to the move log, return the
+ * actor's view. Two robustness guards:
+ *   - idempotency: a retried submission with the same requestId returns the current
+ *     view without re-applying (Convex can re-send a committed mutation if the ack
+ *     is lost; the turn-gate alone would mis-reject that as "not your turn").
+ *   - stale-view: if expectedPly is given and doesn't match the live ply, reject so
+ *     the client refreshes rather than acting on an outdated board.
+ */
 async function commit(
   ctx: MutationCtx,
   game: Doc<"games">,
   color: "w" | "b",
   action: engine.Action,
   recorded: Doc<"moves">["action"],
+  opts: { requestId?: string; expectedPly?: number } = {},
 ) {
+  const { requestId, expectedPly } = opts;
+
+  if (requestId) {
+    const dup = await ctx.db
+      .query("moves")
+      .withIndex("by_request", (q) => q.eq("gameId", game._id).eq("requestId", requestId))
+      .first();
+    if (dup) return engine.viewFor(engineState(game), color); // already applied — no-op
+  }
+
+  if (game.state.turn !== color) throw new Error("not your turn");
+
+  const currentPly = game.state.turnsTaken.w + game.state.turnsTaken.b;
+  if (expectedPly !== undefined && expectedPly !== currentPly) {
+    throw new Error("Your board is out of sync — it will refresh, then try again.");
+  }
+
   const { state: next, events } = engine.applyActionWithEvents(engineState(game), action); // throws on illegal action
   await ctx.db.patch("games", game._id, { state: next });
   await ctx.db.insert("moves", {
@@ -354,6 +381,7 @@ async function commit(
     byColor: color,
     action: recorded,
     events,
+    ...(requestId ? { requestId } : {}),
   });
   return engine.viewFor(next, color);
 }
@@ -365,6 +393,8 @@ export const makeMove = mutation({
     from: v.number(),
     to: v.number(),
     promotion: v.optional(pieceTypeV),
+    requestId: v.optional(v.string()),
+    expectedPly: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { game, color } = await actingSeat(ctx, args.gameId, args.seatToken);
@@ -372,7 +402,10 @@ export const makeMove = mutation({
       args.promotion !== undefined
         ? { from: args.from, to: args.to, promotion: args.promotion as engine.Move["promotion"] }
         : { from: args.from, to: args.to };
-    return commit(ctx, game, color, { kind: "move", move }, { kind: "move", ...move });
+    return commit(ctx, game, color, { kind: "move", move }, { kind: "move", ...move }, {
+      requestId: args.requestId,
+      expectedPly: args.expectedPly,
+    });
   },
 });
 
@@ -382,6 +415,8 @@ export const phaseOut = mutation({
     seatToken: v.string(),
     from: v.number(),
     duration: v.number(),
+    requestId: v.optional(v.string()),
+    expectedPly: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const { game, color } = await actingSeat(ctx, args.gameId, args.seatToken);
@@ -392,6 +427,7 @@ export const phaseOut = mutation({
       color,
       { kind: "phaseOut", phaseOut: phase },
       { kind: "phaseOut", ...phase },
+      { requestId: args.requestId, expectedPly: args.expectedPly },
     );
   },
 });

@@ -187,6 +187,77 @@ describe("games API", () => {
     expect(revealed!.log[0]!.san).toBe("Qd1~4");
   });
 
+  it("makeMove is idempotent on a retried requestId (no double-apply)", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    const args = {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+      requestId: "req-1",
+    };
+    await t.mutation(api.games.makeMove, args);
+    // Retry with the SAME key: a no-op (not an error, not a second move).
+    await t.mutation(api.games.makeMove, args);
+    const moves = await t.run(async (ctx) =>
+      ctx.db.query("moves").withIndex("by_game_and_ply", (q) => q.eq("gameId", g.gameId)).collect(),
+    );
+    expect(moves).toHaveLength(1);
+    const view = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(view!.turn).toBe("b");
+  });
+
+  it("rejects a move made against a stale board (expectedPly mismatch)", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await expect(
+      t.mutation(api.games.makeMove, {
+        gameId: g.gameId,
+        seatToken: g.whiteSeat,
+        from: parseSquare("e2"),
+        to: parseSquare("e4"),
+        expectedPly: 99,
+      }),
+    ).rejects.toThrow();
+    // The correct expectedPly succeeds.
+    const view = await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+      expectedPly: 0,
+    });
+    expect(view.turn).toBe("b");
+  });
+
+  it("a phased piece's return is driven by turn count (survives a gap / disconnect)", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.phaseOut, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("g1"),
+      duration: 1,
+    });
+    // Time/connection are irrelevant — nothing returns until turns are actually taken.
+    await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.blackSeat,
+      from: parseSquare("e7"),
+      to: parseSquare("e5"),
+    });
+    await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+    const view = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(view!.board[parseSquare("g1")]).toEqual({ color: "w", type: "n" }); // returned on schedule
+    expect(view!.yourPhased).toHaveLength(0);
+  });
+
   it("createGame stores a custom ruleset; getGameView exposes it; defaults are standard", async () => {
     const t = convexTest(schema, modules);
 

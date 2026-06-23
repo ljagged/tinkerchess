@@ -468,6 +468,8 @@ export function GameClient({ gameId }: { gameId: string }) {
       from: squareToIdx(source),
       to: squareToIdx(target),
       ...(promotion ? { promotion } : {}),
+      requestId: crypto.randomUUID(), // reused by Convex on retry -> idempotent
+      expectedPly: view.turnsTaken.w + view.turnsTaken.b,
     }).catch((e) => setError((e as Error).message));
     // Let the authoritative view drive the board; reject the optimistic drop.
     return false;
@@ -488,7 +490,14 @@ export function GameClient({ gameId }: { gameId: string }) {
   const confirmPhase = async () => {
     if (phaseFrom === null || !seat.seatToken) return;
     try {
-      await phaseOut({ gameId: id, seatToken: seat.seatToken, from: phaseFrom, duration: phaseDuration });
+      await phaseOut({
+        gameId: id,
+        seatToken: seat.seatToken,
+        from: phaseFrom,
+        duration: phaseDuration,
+        requestId: crypto.randomUUID(),
+        expectedPly: view.turnsTaken.w + view.turnsTaken.b,
+      });
       setError(null);
       setPhaseMode(false);
       setPhaseFrom(null);
