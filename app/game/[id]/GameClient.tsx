@@ -192,6 +192,154 @@ function PhaseTray({
   );
 }
 
+type MatchSummary = NonNullable<FunctionReturnType<typeof api.games.getMatchHistory>>[number];
+
+function matchResultText(m: MatchSummary): string {
+  if (m.status === "active") return "Unfinished";
+  const winner = m.status === "w_won" ? "w" : "b";
+  const sc = m.wonBySelfCapture ? " (self-capture)" : "";
+  if (m.yourColor) return (m.yourColor === winner ? "You won" : "You lost") + sc;
+  return (winner === "w" ? "White won" : "Black won") + sc;
+}
+
+/** Past finished games for this game's seats. Self-hides when there are none. */
+function MatchHistory({
+  gameId,
+  seatToken,
+  onWatch,
+}: {
+  gameId: Id<"games">;
+  seatToken: string | undefined;
+  onWatch: (matchId: Id<"matches">, color: "w" | "b" | null) => void;
+}) {
+  const matches = useQuery(api.games.getMatchHistory, { gameId, seatToken });
+  if (!matches || matches.length === 0) return null;
+  return (
+    <div className="panel">
+      <strong>Past games</strong>
+      <ul className="history">
+        {matches.map((m) => (
+          <li key={m.matchId}>
+            <span>
+              {matchResultText(m)} <span className="muted">· {m.plies} plies</span>
+            </span>
+            <button onClick={() => onWatch(m.matchId, m.yourColor)}>Watch</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const REPLAY_BOARD = 380;
+
+/** Watch an archived game frame-by-frame, with a fog perspective toggle. */
+function ReplayOverlay({
+  matchId,
+  defaultColor,
+  onClose,
+}: {
+  matchId: Id<"matches">;
+  defaultColor: "w" | "b" | null;
+  onClose: () => void;
+}) {
+  const [perspective, setPerspective] = useState<"w" | "b" | "full">(defaultColor ?? "full");
+  const [idx, setIdx] = useState(0);
+  const data = useQuery(api.games.getMatchReplay, { matchId, perspective });
+
+  const frames = data?.frames ?? [];
+  const total = frames.length;
+  const cur = total ? Math.min(idx, total - 1) : 0;
+  const frame = frames[cur];
+
+  const position: Record<string, string> = {};
+  const styles: Record<string, CSSProperties> = {};
+  if (frame) {
+    frame.board.forEach((p, i) => {
+      if (p) position[idxToSquare(i)] = pieceCode(p);
+    });
+    for (const sq of frame.warningSquares) {
+      styles[idxToSquare(sq)] = { outline: "3px dashed #ff8a3d", outlineOffset: "-3px" };
+    }
+    for (const ph of frame.phased) {
+      styles[idxToSquare(ph.origin)] = {
+        boxShadow: "inset 0 0 0 4px #27c2d8",
+        background: "rgba(39,194,216,0.15)",
+      };
+    }
+  }
+  const otherColor = defaultColor === "w" ? "b" : "w";
+
+  return (
+    <div className="replay-overlay" onClick={onClose}>
+      <div className="replay-card" onClick={(e) => e.stopPropagation()}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <strong>Replay</strong>
+          <button onClick={onClose}>Close</button>
+        </div>
+
+        <div className="seg" role="group" aria-label="Replay perspective">
+          {defaultColor && (
+            <button className={perspective === defaultColor ? "on" : ""} onClick={() => setPerspective(defaultColor)}>
+              Your view
+            </button>
+          )}
+          {defaultColor && (
+            <button className={perspective === otherColor ? "on" : ""} onClick={() => setPerspective(otherColor)}>
+              Opponent
+            </button>
+          )}
+          <button className={perspective === "full" ? "on" : ""} onClick={() => setPerspective("full")}>
+            Full reveal
+          </button>
+        </div>
+
+        {data === undefined ? (
+          <div className="muted">Loading…</div>
+        ) : data === null ? (
+          <div className="muted">Replay not found.</div>
+        ) : (
+          <>
+            <div style={{ width: REPLAY_BOARD, margin: "0 auto" }}>
+              <Chessboard
+                id="phase-chess-replay"
+                position={position as BoardProps["position"]}
+                boardWidth={REPLAY_BOARD}
+                boardOrientation={perspective === "b" ? "black" : "white"}
+                arePiecesDraggable={false}
+                customPieces={cburnettPieces}
+                customSquareStyles={styles as BoardProps["customSquareStyles"]}
+                customBoardStyle={{ borderRadius: "8px" }}
+                customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
+                customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
+              />
+            </div>
+
+            {frame && frame.phased.length > 0 && (
+              <div className="muted" style={{ fontSize: "0.85rem" }}>
+                Phased:{" "}
+                {frame.phased.map((p, i) => (
+                  <span key={i} style={{ marginRight: "0.7rem" }}>
+                    {GLYPHS[p.color][p.type]} {idxToSquare(p.origin)}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="replay-controls">
+              <button onClick={() => setIdx(0)} disabled={cur === 0}>⏮</button>
+              <button onClick={() => setIdx(Math.max(0, cur - 1))} disabled={cur === 0}>◀</button>
+              <span className="replay-frame">{cur} / {Math.max(0, total - 1)}</span>
+              <button onClick={() => setIdx(Math.min(total - 1, cur + 1))} disabled={cur >= total - 1}>▶</button>
+              <button onClick={() => setIdx(total - 1)} disabled={cur >= total - 1}>⏭</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -207,6 +355,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [phaseFrom, setPhaseFrom] = useState<number | null>(null);
   const [phaseDuration, setPhaseDuration] = useState(1);
   const [boardWidth, setBoardWidth] = useState(480);
+  const [replay, setReplay] = useState<{ id: Id<"matches">; color: "w" | "b" | null } | null>(null);
 
   // Entry is via token on the splash; a direct visitor with no seat is sent back.
   useEffect(() => {
@@ -536,6 +685,12 @@ export function GameClient({ gameId }: { gameId: string }) {
 
         <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
 
+        <MatchHistory
+          gameId={id}
+          seatToken={seat.seatToken ?? undefined}
+          onWatch={(matchId, color) => setReplay({ id: matchId, color })}
+        />
+
         {/* Players can invite spectators with the token; spectators don't get it. */}
         {view.joinToken && (
           <div className="panel">
@@ -554,6 +709,14 @@ export function GameClient({ gameId }: { gameId: string }) {
 
         {error && <div className="panel" style={{ color: "var(--danger)" }}>{error}</div>}
       </aside>
+
+      {replay && (
+        <ReplayOverlay
+          matchId={replay.id}
+          defaultColor={replay.color}
+          onClose={() => setReplay(null)}
+        />
+      )}
     </main>
   );
 }

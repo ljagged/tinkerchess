@@ -180,3 +180,74 @@ button:disabled {
   align-items: center;
   justify-content: center;
 }
+
+/* Past-games list */
+.history {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.92rem;
+}
+.history .muted {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+/* Replay overlay (modal) */
+.replay-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 13, 17, 0.72);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  overflow: auto;
+  z-index: 50;
+}
+.replay-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  max-width: 640px;
+  width: 100%;
+  display: grid;
+  gap: 1rem;
+}
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.replay-frame {
+  font-family: var(--mono);
+  color: var(--muted);
+  min-width: 5.5em;
+  text-align: center;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: var(--panel-2);
+}
+.seg button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
