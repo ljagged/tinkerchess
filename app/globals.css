@@ -111,3 +111,25 @@ button:disabled {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* Move log: two-column figurine notation, monospace for alignment. */
+.movelog {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.movelog-n {
+  color: var(--muted);
+  text-align: right;
+}
+.movelog-revealed {
+  color: var(--phase);
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}

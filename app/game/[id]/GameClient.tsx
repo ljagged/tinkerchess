@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { ComponentProps, CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
@@ -76,6 +76,53 @@ function CapturedTray({
           {GLYPH[t]}
         </span>
       ))}
+    </div>
+  );
+}
+
+/**
+ * The move log. Reads the per-seat, fog-filtered notation from the server
+ * (opponent phase-out durations show as "~?" until the game ends, then the true
+ * log is revealed). Rendered as a classic two-column figurine move list; a turn's
+ * move and any end-of-turn phase-ins share that player's cell.
+ */
+function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string | undefined }) {
+  const data = useQuery(api.games.getMoveLog, { gameId, seatToken });
+  if (!data || data.log.length === 0) {
+    return (
+      <div className="panel">
+        <strong>Moves</strong>
+        <div className="muted" style={{ marginTop: "0.4rem" }}>No moves yet.</div>
+      </div>
+    );
+  }
+
+  // Group each ply's events (move + any phase-ins) into that player's cell.
+  const rows = new Map<number, { w?: string; b?: string }>();
+  for (const e of data.log) {
+    const moveNo = Math.ceil(e.ply / 2);
+    const row = rows.get(moveNo) ?? {};
+    const prev = e.color === "w" ? row.w : row.b;
+    const text = prev ? `${prev} ${e.fan}` : e.fan;
+    if (e.color === "w") row.w = text;
+    else row.b = text;
+    rows.set(moveNo, row);
+  }
+  const ordered = [...rows.entries()].sort((a, b) => a[0] - b[0]);
+
+  return (
+    <div className="panel">
+      <strong>Moves</strong>
+      <div className="movelog">
+        {ordered.map(([n, r]) => (
+          <Fragment key={n}>
+            <span className="movelog-n">{n}.</span>
+            <span>{r.w ?? ""}</span>
+            <span>{r.b ?? ""}</span>
+          </Fragment>
+        ))}
+      </div>
+      {data.revealed && <div className="movelog-revealed">Full log revealed — game over.</div>}
     </div>
   );
 }
@@ -430,6 +477,8 @@ export function GameClient({ gameId }: { gameId: string }) {
             )}
           </div>
         )}
+
+        <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
 
         {/* Players can invite spectators with the token; spectators don't get it. */}
         {view.joinToken && (
