@@ -252,6 +252,83 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Board overlay — on-board fog cues (DESIGN.md). pointer-events: none so the
+   board underneath stays interactive. */
+.board-wrap {
+  position: relative;
+}
+.board-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ov-cell {
+  position: absolute;
+}
+/* Opponent return warning: dashed + pulsing orange ring (square only). */
+.ov-warn::before {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 2px dashed var(--warning);
+}
+.ov-warn::after {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 3px solid var(--warning);
+  animation: ov-pulse 1.5s ease-out infinite;
+}
+@keyframes ov-pulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 1;
+  }
+  80%,
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+/* Your phased piece: faint cyan ghost of the piece returning here, dashed box +
+   countdown badge — visible only to you. */
+.ov-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--phase);
+}
+.ov-ghost::before {
+  content: "";
+  position: absolute;
+  inset: 11%;
+  border: 2px dashed var(--phase);
+  border-radius: 9px;
+  background: rgba(39, 194, 216, 0.1);
+}
+.ov-ghost-glyph {
+  opacity: 0.55;
+  line-height: 1;
+}
+.ov-ghost-num {
+  position: absolute;
+  right: 6%;
+  top: 4%;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--phase);
+  border-radius: 999px;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Chat (players only) */
 .chat-log {
   margin-top: 0.5rem;

@@ -390,6 +390,52 @@ function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string })
   );
 }
 
+/**
+ * On-board fog cues drawn over the board (DESIGN.md): your phased pieces appear as a
+ * faint cyan ghost (dashed box + glyph + countdown) on their return square — visible
+ * only to you — and an opponent's one-turn return warning pulses as an orange ring,
+ * square only. pointer-events: none keeps the board interactive underneath.
+ */
+function BoardOverlay({
+  boardWidth,
+  orientation,
+  phased,
+  warnings,
+  color,
+}: {
+  boardWidth: number;
+  orientation: "white" | "black";
+  phased: GameView["yourPhased"];
+  warnings: number[];
+  color: "w" | "b";
+}) {
+  const cell = boardWidth / 8;
+  const place = (sq: number) => {
+    const file = sq % 8;
+    const rank = Math.floor(sq / 8);
+    const col = orientation === "black" ? 7 - file : file;
+    const row = orientation === "black" ? rank : 7 - rank;
+    return { left: col * cell, top: row * cell, width: cell, height: cell };
+  };
+  return (
+    <div className="board-overlay">
+      {warnings.map((sq) => (
+        <div key={`w${sq}`} className="ov-cell ov-warn" style={place(sq)} />
+      ))}
+      {phased.map((ph, i) => (
+        <div
+          key={`g${i}`}
+          className="ov-cell ov-ghost"
+          style={{ ...place(ph.origin), fontSize: cell * 0.62 }}
+        >
+          <span className="ov-ghost-glyph">{GLYPHS[color][ph.type]}</span>
+          <span className="ov-ghost-num">{ph.turnsRemaining}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -486,23 +532,12 @@ export function GameClient({ gameId }: { gameId: string }) {
   const myTurn =
     view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
-  // --- square highlights (Lab Slate — color ALWAYS paired with a shape cue;
-  // never color alone, per DESIGN.md: the primary user is colorblind) ---
+  // --- square highlights. The fog cues (your phased ghost, opponent warning) are
+  // drawn by BoardOverlay below as on-board shapes (DESIGN.md). Here we only mark
+  // the selected piece. Color is always paired with a shape cue (colorblind-safe).
   const styles: Record<string, CSSProperties> = {};
-  // Opponent return warning: orange + DASHED outline (distinct shape).
-  for (const sq of view.warningSquares) {
-    styles[idxToSquare(sq)] = { outline: "3px dashed #ff8a3d", outlineOffset: "-3px" };
-  }
-  // Your phased-piece origin: cyan + SOLID border + tint (the "phase" vocabulary).
-  for (const ph of view.yourPhased) {
-    styles[idxToSquare(ph.origin)] = {
-      boxShadow: "inset 0 0 0 4px #27c2d8",
-      background: "rgba(39,194,216,0.15)",
-    };
-  }
-  // Selected piece to phase: thick neutral border.
   if (phaseFrom !== null) {
-    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" };
+    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected
   }
 
   // --- handlers ---
@@ -646,22 +681,31 @@ export function GameClient({ gameId }: { gameId: string }) {
       <div style={{ width: boardWidth }}>
         {/* Top tray: pieces the top player captured (the bottom player's losses). */}
         <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
-        <Chessboard
-          id="phase-chess"
-          position={position as BoardProps["position"]}
-          boardWidth={boardWidth}
-          boardOrientation={myColor === "b" ? "black" : "white"}
-          arePiecesDraggable={myTurn && !phaseMode}
-          isDraggablePiece={({ piece }) => myTurn && !phaseMode && piece[0] === myColor}
-          onPieceDrop={onPieceDrop}
-          onSquareClick={onSquareClick}
-          onPromotionCheck={() => false}
-          customSquareStyles={styles as BoardProps["customSquareStyles"]}
-          customBoardStyle={{ borderRadius: "8px" }}
-          customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
-          customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
-          customPieces={cburnettPieces}
-        />
+        <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
+          <Chessboard
+            id="phase-chess"
+            position={position as BoardProps["position"]}
+            boardWidth={boardWidth}
+            boardOrientation={myColor === "b" ? "black" : "white"}
+            arePiecesDraggable={myTurn && !phaseMode}
+            isDraggablePiece={({ piece }) => myTurn && !phaseMode && piece[0] === myColor}
+            onPieceDrop={onPieceDrop}
+            onSquareClick={onSquareClick}
+            onPromotionCheck={() => false}
+            customSquareStyles={styles as BoardProps["customSquareStyles"]}
+            customBoardStyle={{ borderRadius: "8px" }}
+            customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
+            customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
+            customPieces={cburnettPieces}
+          />
+          <BoardOverlay
+            boardWidth={boardWidth}
+            orientation={myColor === "b" ? "black" : "white"}
+            phased={view.yourPhased}
+            warnings={view.warningSquares}
+            color={myColor === "b" ? "b" : "w"}
+          />
+        </div>
         {/* Bottom tray: pieces the bottom player captured (the top player's losses). */}
         <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
       </div>
