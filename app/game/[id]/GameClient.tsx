@@ -34,6 +34,11 @@ const PIECE_NAME: Record<string, string> = {
 };
 
 const GLYPH: Record<string, string> = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
+// Color-aware glyphs for the phase tray (your own pieces).
+const GLYPHS: Record<"w" | "b", Record<string, string>> = {
+  w: { p: "♙", n: "♘", b: "♗", r: "♖", q: "♕", k: "♔" },
+  b: { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" },
+};
 // Sort order by value: pawn < knight < bishop < rook < queen (bishop just over knight).
 const VALUE_ORDER: Record<string, number> = { p: 0, n: 1, b: 2, r: 3, q: 4 };
 
@@ -123,6 +128,44 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
         ))}
       </div>
       {data.revealed && <div className="movelog-revealed">Full log revealed — game over.</div>}
+    </div>
+  );
+}
+
+/**
+ * The phase tray — your hidden pieces, each as a glyph wrapped in a cyan countdown
+ * ring (fraction = turns left / the piece type's max) with a turns-left badge.
+ * This is the DESIGN.md signature: hidden-but-yours state lives here, off the
+ * board, so the board stays clean.
+ */
+function PhaseTray({
+  phased,
+  color,
+}: {
+  phased: GameView["yourPhased"];
+  color: "w" | "b";
+}) {
+  if (phased.length === 0) {
+    return <div className="muted" style={{ marginTop: "0.4rem" }}>None.</div>;
+  }
+  return (
+    <div className="phasetray">
+      {phased.map((ph, i) => {
+        const max = MAX_PHASE[ph.type] ?? 1;
+        const frac = Math.max(0, Math.min(1, ph.turnsRemaining / max));
+        return (
+          <div
+            key={i}
+            className="pp"
+            style={{ ["--deg" as string]: `${Math.round(frac * 360)}deg` } as CSSProperties}
+            title={`${PIECE_NAME[ph.type]} → ${idxToSquare(ph.origin)}, returns in ${ph.turnsRemaining} turn${ph.turnsRemaining === 1 ? "" : "s"}`}
+          >
+            <span className="pp-ring" aria-hidden />
+            <span className="pp-glyph">{GLYPHS[color][ph.type]}</span>
+            <span className="pp-num">{ph.turnsRemaining}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -458,18 +501,7 @@ export function GameClient({ gameId }: { gameId: string }) {
         {isPlayer && (
           <div className="panel">
             <strong>Your phased pieces</strong>
-            {view.yourPhased.length === 0 ? (
-              <div className="muted" style={{ marginTop: "0.4rem" }}>None.</div>
-            ) : (
-              <ul style={{ margin: "0.5rem 0 0", paddingLeft: "1.1rem" }}>
-                {view.yourPhased.map((ph, i) => (
-                  <li key={i}>
-                    {PIECE_NAME[ph.type]} → {idxToSquare(ph.origin)}, returns in{" "}
-                    {ph.turnsRemaining} turn{ph.turnsRemaining === 1 ? "" : "s"}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} />
             {view.warningSquares.length > 0 && (
               <div style={{ marginTop: "0.6rem", color: "var(--warning)" }}>
                 ⚠ An opponent piece returns next turn (dashed square).
