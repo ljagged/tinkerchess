@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
-import type { ComponentProps, CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import type { ComponentProps, CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
 import { useMutation, useQuery } from "convex/react";
@@ -53,19 +53,32 @@ const PIECE_CODES = [
   "wP", "wN", "wB", "wR", "wQ", "wK",
   "bP", "bN", "bB", "bR", "bQ", "bK",
 ] as const;
+// JohnPablok's glyphs sit larger in their viewBox than cburnett did, so render
+// each at 90% of the square (centered) to restore comfortable breathing room.
+const PIECE_SCALE = 0.9;
 const pieceSet = (variant: PieceVariant) =>
   Object.fromEntries(
     PIECE_CODES.map((code) => [
       code,
       ({ squareWidth }: { squareWidth: number }) => (
-        <img
-          src={`/pieces/johnpablok/${variant}/${code}.svg`}
-          alt={code}
-          width={squareWidth}
-          height={squareWidth}
-          draggable={false}
-          style={{ display: "block" }}
-        />
+        <div
+          style={{
+            width: squareWidth,
+            height: squareWidth,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <img
+            src={`/pieces/johnpablok/${variant}/${code}.svg`}
+            alt={code}
+            width={squareWidth * PIECE_SCALE}
+            height={squareWidth * PIECE_SCALE}
+            draggable={false}
+            style={{ display: "block" }}
+          />
+        </div>
       ),
     ]),
   ) as BoardProps["customPieces"];
@@ -108,11 +121,12 @@ function CapturedTray({
           style={{
             fontSize: glyphSize,
             lineHeight: 1,
-            // Distinguished by luminance (colorblind-safe), not hue.
-            color: color === "w" ? "#edeff2" : "#7c8a99",
+            // Outline (white) vs solid (black) glyph = a shape cue, not just hue;
+            // paired with the "You"/"Opponent" row label (colorblind-safe).
+            color: color === "w" ? "#edeff2" : "#9aa7b4",
           }}
         >
-          {GLYPH[t]}
+          {GLYPHS[color][t]}
         </span>
       ))}
     </div>
@@ -127,9 +141,18 @@ function CapturedTray({
  */
 function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string | undefined }) {
   const data = useQuery(api.games.getMoveLog, { gameId, seatToken });
+  const logRef = useRef<HTMLDivElement>(null);
+  const count = data?.log.length ?? 0;
+
+  // Scroll the freshest move into view as the game progresses.
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [count]);
+
   if (!data || data.log.length === 0) {
     return (
-      <div className="panel">
+      <div className="panel moves-panel">
         <strong>Moves</strong>
         <div className="muted" style={{ marginTop: "0.4rem" }}>No moves yet.</div>
       </div>
@@ -150,9 +173,9 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
   const ordered = [...rows.entries()].sort((a, b) => a[0] - b[0]);
 
   return (
-    <div className="panel">
+    <div className="panel moves-panel">
       <strong>Moves</strong>
-      <div className="movelog">
+      <div className="movelog" ref={logRef}>
         {ordered.map(([n, r]) => (
           <Fragment key={n}>
             <span className="movelog-n">{n}.</span>
@@ -246,6 +269,13 @@ function MatchHistory({
 }
 
 const REPLAY_BOARD = 380;
+
+// Live board sizing (px). Bigger default than before; user can drag-resize within
+// these bounds and the choice persists. Actual width is also clamped to the column.
+const BOARD_MIN = 320;
+const BOARD_CAP = 900;
+const BOARD_DEFAULT = 720;
+const GUTTER = 22; // coordinate gutter width
 
 /** Watch an archived game frame-by-frame, with a fog perspective toggle. */
 function ReplayOverlay({
@@ -359,6 +389,13 @@ function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string })
   const messages = useQuery(api.games.getMessages, { gameId, seatToken });
   const send = useMutation(api.games.sendMessage);
   const [text, setText] = useState("");
+  const logRef = useRef<HTMLDivElement>(null);
+
+  // Keep the latest message in view as the conversation grows or arrives.
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   const submit = () => {
     const t = text.trim();
@@ -368,9 +405,9 @@ function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string })
   };
 
   return (
-    <div className="panel">
+    <div className="panel chat-panel">
       <strong>Chat</strong>
-      <div className="chat-log">
+      <div className="chat-log" ref={logRef}>
         {messages && messages.length === 0 && (
           <div className="muted" style={{ fontSize: "0.85rem" }}>No messages yet.</div>
         )}
@@ -449,6 +486,114 @@ function BoardOverlay({
   );
 }
 
+/**
+ * A discreet icon button that toggles a small popover (Rules, Spectator invite).
+ * Closes on outside click or Escape so it never clutters the board.
+ */
+function IconPopover({
+  icon,
+  label,
+  align = "right",
+  children,
+}: {
+  icon: string;
+  label: string;
+  align?: "left" | "right";
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div className="pop-wrap" ref={ref}>
+      <button
+        className="icon-btn"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {icon}
+      </button>
+      {open && (
+        <div className={`popover popover-${align}`} role="dialog" aria-label={label}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The on-board phase dialog: right-clicking an eligible piece opens this over its
+ * square. A 1–n slider picks the duration (n = the piece's max from the ruleset);
+ * clicking anywhere off the box cancels (handled by the parent).
+ */
+function PhasePopover({
+  left,
+  top,
+  type,
+  square,
+  max,
+  duration,
+  setDuration,
+  onConfirm,
+}: {
+  left: number;
+  top: number;
+  type: string;
+  square: string;
+  max: number;
+  duration: number;
+  setDuration: (d: number) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="phase-pop"
+      style={{ left, top }}
+      role="dialog"
+      aria-label={`Phase out ${PIECE_NAME[type]} on ${square}`}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="phase-pop-title">
+        {GLYPH[type]} {PIECE_NAME[type]} · {square}
+      </div>
+      {max > 1 ? (
+        <input
+          type="range"
+          min={1}
+          max={max}
+          value={duration}
+          onChange={(e) => setDuration(Number(e.target.value))}
+          aria-label="Turns to phase out"
+          className="phase-slider"
+        />
+      ) : null}
+      <div className="phase-pop-row">
+        <span className="mono">
+          {duration} turn{duration > 1 ? "s" : ""}
+        </span>
+        <button className="primary" onClick={onConfirm}>
+          Phase out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -460,11 +605,24 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [seat, setSeat] = useState<Seat | null>(null);
   const [noSeat, setNoSeat] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [phaseMode, setPhaseMode] = useState(false);
   const [phaseFrom, setPhaseFrom] = useState<number | null>(null);
   const [phaseDuration, setPhaseDuration] = useState(1);
-  const [boardWidth, setBoardWidth] = useState(480);
   const [replay, setReplay] = useState<{ id: Id<"matches">; color: "w" | "b" | null } | null>(null);
+
+  // Board sizing: the board fills its column up to a user-set max (drag handle,
+  // persisted) and is clamped to whatever the column actually offers. This makes
+  // it bigger than before, responsive to the window, and resizable like lichess.
+  const [boardMax, setBoardMax] = useState(BOARD_DEFAULT);
+  const [availWidth, setAvailWidth] = useState(BOARD_DEFAULT);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const setBoardCol = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    if (!el) return;
+    const ro = new ResizeObserver(() => setAvailWidth(el.clientWidth));
+    ro.observe(el);
+    roRef.current = ro;
+    setAvailWidth(el.clientWidth);
+  }, []);
 
   // Entry is via token on the splash; a direct visitor with no seat is sent back.
   useEffect(() => {
@@ -476,12 +634,24 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
   }, [id, router]);
 
+  // Restore the saved board size, then persist any change (incl. drag).
   useEffect(() => {
-    const fit = () => setBoardWidth(Math.min(480, window.innerWidth - 40));
-    fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
+    const s = Number(localStorage.getItem("phasechess:boardMax"));
+    if (s) setBoardMax(Math.min(BOARD_CAP, Math.max(BOARD_MIN, s)));
   }, []);
+  useEffect(() => {
+    localStorage.setItem("phasechess:boardMax", String(boardMax));
+  }, [boardMax]);
+
+  // While a phase popover is open, a click anywhere off the box cancels it.
+  useEffect(() => {
+    if (phaseFrom === null) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".phase-pop")) setPhaseFrom(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [phaseFrom]);
 
   const view = useQuery(
     api.games.getGameView,
@@ -506,7 +676,7 @@ export function GameClient({ gameId }: { gameId: string }) {
           <Chessboard
             id="phase-chess"
             position={position as BoardProps["position"]}
-            boardWidth={boardWidth}
+            boardWidth={460}
             arePiecesDraggable={false}
             customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
             customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
@@ -545,6 +715,9 @@ export function GameClient({ gameId }: { gameId: string }) {
   const myTurn =
     view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
+  // Final board width: as big as the column allows, capped by the user's choice.
+  const boardWidth = Math.max(BOARD_MIN, Math.min(boardMax, availWidth - GUTTER - 8));
+
   // --- square highlights. The fog cues (your phased ghost, opponent warning) are
   // drawn by BoardOverlay below as on-board shapes (DESIGN.md). Here we only mark
   // the selected piece. Color is always paired with a shape cue (colorblind-safe).
@@ -561,11 +734,31 @@ export function GameClient({ gameId }: { gameId: string }) {
   const fileLabels = orient === "black"
     ? ["h", "g", "f", "e", "d", "c", "b", "a"]
     : ["a", "b", "c", "d", "e", "f", "g", "h"];
-  const GUTTER = 20;
+
+  // Pixel position of a square (top-left), orientation-aware — used to anchor the
+  // phase popover over the right-clicked square.
+  const cell = boardWidth / 8;
+  const squarePos = (sq: number) => {
+    const file = sq % 8;
+    const rank = Math.floor(sq / 8);
+    const col = orient === "black" ? 7 - file : file;
+    const row = orient === "black" ? rank : 7 - rank;
+    return { left: col * cell, top: row * cell };
+  };
+  const POP_W = 196;
+  const POP_H = 96;
+  let popLeft = 0;
+  let popTop = 0;
+  if (phaseFrom !== null) {
+    const pos = squarePos(phaseFrom);
+    popLeft = Math.min(Math.max(0, pos.left + cell / 2 - POP_W / 2), Math.max(0, boardWidth - POP_W));
+    popTop = pos.top + cell + 8;
+    if (popTop + POP_H > boardWidth) popTop = Math.max(8, pos.top - POP_H - 8);
+  }
 
   // --- handlers ---
   const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target, piece) => {
-    if (!myTurn || !seat.seatToken || phaseMode) return false;
+    if (!myTurn || !seat.seatToken) return false;
     const isPawn = piece[1] === "P";
     const lastRank = target.endsWith("8") || target.endsWith("1");
     const promotion = isPawn && lastRank ? ("q" as const) : undefined;
@@ -582,15 +775,24 @@ export function GameClient({ gameId }: { gameId: string }) {
     return false;
   };
 
-  const onSquareClick: NonNullable<BoardProps["onSquareClick"]> = (square) => {
-    if (!phaseMode || !myTurn) return;
-    const p = view.board[squareToIdx(square)];
+  // Left-click a square: the only job here is to dismiss an open phase popover
+  // (selecting/moving pieces is drag, phasing is right-click).
+  const onSquareClick: NonNullable<BoardProps["onSquareClick"]> = () => {
+    if (phaseFrom !== null) setPhaseFrom(null);
+  };
+
+  // Right-click your own eligible piece to phase it out (less misfire-prone than
+  // double-click). Opens the on-board slider popover over that square.
+  const onSquareRightClick: NonNullable<BoardProps["onSquareRightClick"]> = (square) => {
+    if (!myTurn || !seat.seatToken) return;
+    const idx = squareToIdx(square);
+    const p = view.board[idx];
     // Phase-eligibility comes from the game's ruleset, not a hardcoded list.
     if (!p || p.color !== myColor || (view.rules[p.type] ?? 0) === 0) {
       setPhaseFrom(null);
       return;
     }
-    setPhaseFrom(squareToIdx(square));
+    setPhaseFrom(idx);
     setPhaseDuration(1);
   };
 
@@ -606,7 +808,6 @@ export function GameClient({ gameId }: { gameId: string }) {
         expectedPly: view.turnsTaken.w + view.turnsTaken.b,
       });
       setError(null);
-      setPhaseMode(false);
       setPhaseFrom(null);
     } catch (e) {
       setError((e as Error).message);
@@ -617,12 +818,28 @@ export function GameClient({ gameId }: { gameId: string }) {
     if (!seat.seatToken) return;
     try {
       await newGame({ gameId: id, seatToken: seat.seatToken });
-      setPhaseMode(false);
       setPhaseFrom(null);
       setError(null);
     } catch (e) {
       setError((e as Error).message);
     }
+  };
+
+  // Drag the corner handle to resize the board; the choice persists.
+  const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = boardWidth;
+    const move = (ev: PointerEvent) => {
+      const next = Math.max(BOARD_MIN, Math.min(BOARD_CAP, startW + (ev.clientX - startX)));
+      setBoardMax(next);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
   const selectedType = phaseFrom !== null ? view.board[phaseFrom]?.type : undefined;
@@ -672,210 +889,183 @@ export function GameClient({ gameId }: { gameId: string }) {
   const topColor: "w" | "b" = bottomColor === "w" ? "b" : "w";
   const glyphSize = Math.round(boardWidth / 14);
 
+  // Phase ruleset, formatted once for the Rules popover.
+  const rulesOrder: Array<[keyof GameView["rules"], string]> = [
+    ["p", "Pawn"], ["n", "Knight"], ["b", "Bishop"],
+    ["r", "Rook"], ["q", "Queen"], ["k", "King"],
+  ];
+  const phaseable = rulesOrder.filter(([t]) => view.rules[t] > 0);
+
   return (
-    <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+    <main className="game">
       {view.status !== "active" && (
-        <div
-          className="panel"
-          style={{
-            gridColumn: "1 / -1",
-            textAlign: "center",
-            borderColor: "var(--accent)",
-            display: "grid",
-            gap: "0.9rem",
-            padding: "1.5rem",
-          }}
-        >
-          <div style={{ fontSize: "1.7rem", fontWeight: 700 }}>{status}</div>
+        <div className="gameover-banner panel">
+          <div className="gameover-status">{status}</div>
           {isPlayer && (
-            <div>
-              <button
-                className="primary"
-                style={{ fontSize: "1.05rem", padding: "0.6rem 1.5rem" }}
-                onClick={startNewGame}
-              >
-                New game
-              </button>
-            </div>
+            <button className="primary gameover-btn" onClick={startNewGame}>
+              New game
+            </button>
           )}
         </div>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `${GUTTER}px ${boardWidth}px`,
-          gridTemplateRows: `auto ${boardWidth}px ${GUTTER}px auto`,
-        }}
-      >
-        {/* row 1: corner + top tray (pieces the top player captured) */}
-        <div />
-        <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
-        {/* row 2: rank gutter + board */}
-        <div className="board-ranks">
-          {rankLabels.map((r) => (
-            <span key={r}>{r}</span>
-          ))}
-        </div>
-        <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
-          <Chessboard
-            id="phase-chess"
-            position={position as BoardProps["position"]}
-            boardWidth={boardWidth}
-            boardOrientation={orient}
-            showBoardNotation={false}
-            arePiecesDraggable={myTurn && !phaseMode}
-            isDraggablePiece={({ piece }) => myTurn && !phaseMode && piece[0] === myColor}
-            onPieceDrop={onPieceDrop}
-            onSquareClick={onSquareClick}
-            onPromotionCheck={() => false}
-            customSquareStyles={styles as BoardProps["customSquareStyles"]}
-            customBoardStyle={{ borderRadius: "8px" }}
-            customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
-            customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
-            customPieces={boardPieces}
+      <div className="game-grid">
+        {/* LEFT RAIL — gameplay info: phased pieces (top), then the move list. */}
+        <aside className="rail rail-left">
+          {isPlayer && (
+            <div className="panel phased-panel">
+              <strong>Your phased pieces</strong>
+              <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
+              {view.warningSquares.length > 0 && (
+                <div className="warn-line">
+                  ⚠ An opponent piece returns next turn (dashed square on the board).
+                </div>
+              )}
+            </div>
+          )}
+          <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
+          <MatchHistory
+            gameId={id}
+            seatToken={seat.seatToken ?? undefined}
+            onWatch={(matchId, color) => setReplay({ id: matchId, color })}
           />
-          <BoardOverlay
-            boardWidth={boardWidth}
-            orientation={orient}
-            phased={view.yourPhased}
-            warnings={view.warningSquares}
-            color={myColor === "b" ? "b" : "w"}
-          />
-        </div>
-        {/* row 3: corner + file gutter */}
-        <div />
-        <div className="board-files">
-          {fileLabels.map((f) => (
-            <span key={f}>{f}</span>
-          ))}
-        </div>
-        {/* row 4: corner + bottom tray (pieces the bottom player captured) */}
-        <div />
-        <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
+        </aside>
+
+        {/* CENTER — the board, with player rows, captured trays, and turn stripe. */}
+        <section className="board-col" ref={setBoardCol}>
+          <div className="board-stack" style={{ width: GUTTER + boardWidth }}>
+            <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
+              <span className="who">
+                Opponent
+                {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
+              </span>
+              <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
+            </div>
+
+            <div
+              className="board-frame"
+              style={{
+                gridTemplateColumns: `${GUTTER}px ${boardWidth}px`,
+                gridTemplateRows: `${boardWidth}px ${GUTTER}px`,
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <div className="board-ranks">
+                {rankLabels.map((r) => (
+                  <span key={r}>{r}</span>
+                ))}
+              </div>
+              <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
+                <div
+                  className={`turn-bar ${myTurn ? "mine" : "theirs"}`}
+                  aria-hidden
+                  title={myTurn ? "Your move" : "Opponent's move"}
+                />
+                <Chessboard
+                  id="phase-chess"
+                  position={position as BoardProps["position"]}
+                  boardWidth={boardWidth}
+                  boardOrientation={orient}
+                  showBoardNotation={false}
+                  arePiecesDraggable={myTurn}
+                  isDraggablePiece={({ piece }) => myTurn && piece[0] === myColor}
+                  onPieceDrop={onPieceDrop}
+                  onSquareClick={onSquareClick}
+                  onSquareRightClick={onSquareRightClick}
+                  onPromotionCheck={() => false}
+                  customSquareStyles={styles as BoardProps["customSquareStyles"]}
+                  customBoardStyle={{ borderRadius: "8px" }}
+                  customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
+                  customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
+                  customPieces={boardPieces}
+                />
+                <BoardOverlay
+                  boardWidth={boardWidth}
+                  orientation={orient}
+                  phased={view.yourPhased}
+                  warnings={view.warningSquares}
+                  color={myColor === "b" ? "b" : "w"}
+                />
+                {phaseFrom !== null && selectedType && (
+                  <PhasePopover
+                    left={popLeft}
+                    top={popTop}
+                    type={selectedType}
+                    square={idxToSquare(phaseFrom)}
+                    max={selectedMax}
+                    duration={phaseDuration}
+                    setDuration={setPhaseDuration}
+                    onConfirm={confirmPhase}
+                  />
+                )}
+                <div
+                  className="resize-handle"
+                  onPointerDown={onHandleDown}
+                  title="Drag to resize the board"
+                  aria-hidden
+                />
+              </div>
+              <div />
+              <div className="board-files">
+                {fileLabels.map((f) => (
+                  <span key={f}>{f}</span>
+                ))}
+              </div>
+            </div>
+
+            <div className={`player-row ${myTurn ? "to-move" : ""}`}>
+              <span className="who">
+                You
+                {myTurn && <span className="move-dot" aria-hidden> ● to move</span>}
+              </span>
+              <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
+            </div>
+          </div>
+          {isPlayer && view.status === "active" && (
+            <p className="phase-hint">Right-click one of your pieces to phase it out.</p>
+          )}
+          <span className="sr-only" aria-live="polite">{status}</span>
+        </section>
+
+        {/* RIGHT RAIL — communication + discreet tools (rules, spectator invite). */}
+        <aside className="rail rail-right">
+          <div className="rail-tools">
+            <IconPopover icon="?" label="Rules" align="left">
+              <strong>Phasing rules</strong>
+              <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
+                {phaseable.length === 0
+                  ? "No pieces can phase."
+                  : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
+              </div>
+              <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                Right-click a piece to phase it out. It returns to its square after the
+                chosen number of your turns, removing whatever sits there. Capture the king to win.
+              </div>
+            </IconPopover>
+            {view.joinToken && (
+              <IconPopover icon="⤴" label="Invite spectators" align="left">
+                <strong>Invite spectators</strong>
+                <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
+                  <span className="token-code">{formatToken(view.joinToken)}</span>
+                  <CopyButton text={formatToken(view.joinToken)} />
+                </div>
+                <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+                  Anyone with this token can watch.
+                </div>
+              </IconPopover>
+            )}
+          </div>
+          {isPlayer && seat.seatToken && <Chat gameId={id} seatToken={seat.seatToken} />}
+        </aside>
       </div>
 
-      <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
-        <div className="panel">
-          {view.status === "active" && (
-            <div style={{ fontSize: "1.1rem", fontWeight: 600 }}>{status}</div>
-          )}
-          <div className="muted" style={{ marginTop: view.status === "active" ? "0.3rem" : 0 }}>
-            You are{" "}
-            {myColor === "w" ? "White" : myColor === "b" ? "Black" : "a spectator"}.
-          </div>
+      {/* Transient notices float as toasts so the rails never reflow. */}
+      {(selfCaptureText || error) && (
+        <div className="toast-area">
+          {selfCaptureText && <div className="toast">{selfCaptureText}</div>}
+          {error && <div className="toast toast-danger" role="alert">{error}</div>}
         </div>
-
-        <div className="panel">
-          <strong>Rules</strong>
-          <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
-            {(() => {
-              const order: Array<[keyof GameView["rules"], string]> = [
-                ["p", "Pawn"], ["n", "Knight"], ["b", "Bishop"],
-                ["r", "Rook"], ["q", "Queen"], ["k", "King"],
-              ];
-              const phaseable = order.filter(([t]) => view.rules[t] > 0);
-              return phaseable.length === 0
-                ? "No pieces can phase."
-                : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ");
-            })()}
-          </div>
-        </div>
-
-        {selfCaptureText && (
-          <div className="panel" style={{ color: "var(--danger)" }}>{selfCaptureText}</div>
-        )}
-
-        {isPlayer && view.status === "active" && (
-          <div className="panel">
-            <div className="row" style={{ justifyContent: "space-between" }}>
-              <strong>Phasing</strong>
-              <button
-                onClick={() => {
-                  setPhaseMode((m) => !m);
-                  setPhaseFrom(null);
-                }}
-                disabled={!myTurn}
-                className={phaseMode ? "primary" : ""}
-              >
-                {phaseMode ? "Cancel" : "Phase out a piece"}
-              </button>
-            </div>
-            {phaseMode && (
-              <div style={{ marginTop: "0.75rem" }}>
-                {phaseFrom === null ? (
-                  <span className="muted">Click one of your non-pawn pieces.</span>
-                ) : (
-                  <div style={{ display: "grid", gap: "0.6rem" }}>
-                    <div>
-                      {PIECE_NAME[selectedType ?? ""]} on{" "}
-                      <strong>{idxToSquare(phaseFrom)}</strong> — phase out for:
-                    </div>
-                    <div className="row">
-                      {Array.from({ length: selectedMax }, (_, k) => k + 1).map((d) => (
-                        <button
-                          key={d}
-                          className={d === phaseDuration ? "primary" : ""}
-                          onClick={() => setPhaseDuration(d)}
-                        >
-                          {d}
-                        </button>
-                      ))}
-                    </div>
-                    <button className="primary" onClick={confirmPhase}>
-                      Phase out for {phaseDuration} turn{phaseDuration > 1 ? "s" : ""}
-                    </button>
-                    <span className="muted" style={{ fontSize: "0.85rem" }}>
-                      It stays out through your turn(s) and returns to {idxToSquare(phaseFrom)} at
-                      the end of the last one, removing whatever is there — your own pieces included.
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {isPlayer && (
-          <div className="panel">
-            <strong>Your phased pieces</strong>
-            <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
-            {view.warningSquares.length > 0 && (
-              <div style={{ marginTop: "0.6rem", color: "var(--warning)" }}>
-                ⚠ An opponent piece returns next turn (dashed square).
-              </div>
-            )}
-          </div>
-        )}
-
-        {isPlayer && seat.seatToken && <Chat gameId={id} seatToken={seat.seatToken} />}
-
-        <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
-
-        <MatchHistory
-          gameId={id}
-          seatToken={seat.seatToken ?? undefined}
-          onWatch={(matchId, color) => setReplay({ id: matchId, color })}
-        />
-
-        {/* Players can invite spectators with the token; spectators don't get it. */}
-        {view.joinToken && (
-          <div className="panel">
-            <strong>Invite spectators</strong>
-            <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
-              <span style={{ fontFamily: "ui-monospace, monospace", fontSize: "1.15rem", letterSpacing: "0.12em" }}>
-                {formatToken(view.joinToken)}
-              </span>
-              <CopyButton text={formatToken(view.joinToken)} />
-            </div>
-            <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-              Anyone with this token can watch the game.
-            </div>
-          </div>
-        )}
-
-        {error && <div className="panel" style={{ color: "var(--danger)" }}>{error}</div>}
-      </aside>
+      )}
 
       {replay && (
         <ReplayOverlay
