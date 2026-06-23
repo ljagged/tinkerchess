@@ -187,6 +187,36 @@ describe("games API", () => {
     expect(revealed!.log[0]!.san).toBe("Qd1~4");
   });
 
+  it("createGame stores a custom ruleset; getGameView exposes it; defaults are standard", async () => {
+    const t = convexTest(schema, modules);
+
+    const custom = await t.mutation(api.games.createGame, {
+      config: { maxPhaseDuration: { p: 2, n: 2, b: 2, r: 3, q: 4, k: 1 } },
+    });
+    const customView = await t.query(api.games.getGameView, {
+      gameId: custom.gameId,
+      seatToken: custom.seatToken,
+    });
+    expect(customView!.rules.p).toBe(2); // pawns may phase in this game
+
+    const std = await t.mutation(api.games.createGame, {});
+    const stdView = await t.query(api.games.getGameView, {
+      gameId: std.gameId,
+      seatToken: std.seatToken,
+    });
+    expect(stdView!.rules).toEqual({ p: 0, n: 2, b: 2, r: 3, q: 4, k: 1 });
+  });
+
+  it("createGame sanitizes out-of-range durations to 0..8", async () => {
+    const t = convexTest(schema, modules);
+    const g = await t.mutation(api.games.createGame, {
+      config: { maxPhaseDuration: { p: -5, n: 99, b: 2, r: 3, q: 4, k: 1 } },
+    });
+    const view = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.seatToken });
+    expect(view!.rules.p).toBe(0); // clamped up from -5
+    expect(view!.rules.n).toBe(8); // clamped down from 99
+  });
+
   it("newGame archives the finished game (history preserved, not destroyed)", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);
