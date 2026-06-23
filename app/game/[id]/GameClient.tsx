@@ -41,27 +41,40 @@ const GLYPHS: Record<"w" | "b", Record<string, string>> = {
 // Sort order by value: pawn < knight < bishop < rook < queen (bishop just over knight).
 const VALUE_ORDER: Record<string, number> = { p: 0, n: 1, b: 2, r: 3, q: 4 };
 
-// cburnett piece set (lichess open standard, GPLv2+; SVGs in public/pieces/cburnett).
-// Renders each piece as an SVG sized to the square, per DESIGN.md.
+// JohnPablok's modified cburnett set (CC-BY-SA 3.0; SVGs in public/pieces/johnpablok).
+// Pawns are slightly smaller relative to the back row, and black pieces carry a
+// white outline so they stay legible on the dark squares (a colorblind-contrast
+// win — see DESIGN.md). Two variants ship: "flat" and "shadow" (drop shadow).
+// A player-facing toggle is deferred to settings; for now flip PIECE_VARIANT to
+// switch the whole board. Flat is the default to match the flat Lab Slate look.
+type PieceVariant = "flat" | "shadow";
+const PIECE_VARIANT: PieceVariant = "flat";
 const PIECE_CODES = [
   "wP", "wN", "wB", "wR", "wQ", "wK",
   "bP", "bN", "bB", "bR", "bQ", "bK",
 ] as const;
-const cburnettPieces = Object.fromEntries(
-  PIECE_CODES.map((code) => [
-    code,
-    ({ squareWidth }: { squareWidth: number }) => (
-      <img
-        src={`/pieces/cburnett/${code}.svg`}
-        alt={code}
-        width={squareWidth}
-        height={squareWidth}
-        draggable={false}
-        style={{ display: "block" }}
-      />
-    ),
-  ]),
-) as BoardProps["customPieces"];
+const pieceSet = (variant: PieceVariant) =>
+  Object.fromEntries(
+    PIECE_CODES.map((code) => [
+      code,
+      ({ squareWidth }: { squareWidth: number }) => (
+        <img
+          src={`/pieces/johnpablok/${variant}/${code}.svg`}
+          alt={code}
+          width={squareWidth}
+          height={squareWidth}
+          draggable={false}
+          style={{ display: "block" }}
+        />
+      ),
+    ]),
+  ) as BoardProps["customPieces"];
+// Prebuild both so a future settings toggle is a cheap lookup, not a re-map.
+const PIECE_SETS: Record<PieceVariant, BoardProps["customPieces"]> = {
+  flat: pieceSet("flat"),
+  shadow: pieceSet("shadow"),
+};
+const boardPieces = PIECE_SETS[PIECE_VARIANT];
 
 /**
  * A fixed-height strip of captured pieces (half-size, value-sorted, kings
@@ -308,7 +321,7 @@ function ReplayOverlay({
                 boardWidth={REPLAY_BOARD}
                 boardOrientation={perspective === "b" ? "black" : "white"}
                 arePiecesDraggable={false}
-                customPieces={cburnettPieces}
+                customPieces={boardPieces}
                 customSquareStyles={styles as BoardProps["customSquareStyles"]}
                 customBoardStyle={{ borderRadius: "8px" }}
                 customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
@@ -498,7 +511,7 @@ export function GameClient({ gameId }: { gameId: string }) {
             customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
             customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
             customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
-            customPieces={cburnettPieces}
+            customPieces={boardPieces}
           />
         </div>
         <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
@@ -720,7 +733,7 @@ export function GameClient({ gameId }: { gameId: string }) {
             customBoardStyle={{ borderRadius: "8px" }}
             customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
             customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
-            customPieces={cburnettPieces}
+            customPieces={boardPieces}
           />
           <BoardOverlay
             boardWidth={boardWidth}

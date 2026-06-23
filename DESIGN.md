@@ -127,7 +127,7 @@ fog-filtered projection.
 - Tap targets ≥44px; tap-to-move so motor precision isn't required.
 
 ## Standard chess affordances (table stakes — must have)
-cburnett piece set (open-standard default), last-move highlight, legal-move dots,
+JohnPablok Cburnett piece set (flat + drop-shadow variants), last-move highlight, legal-move dots,
 coordinate labels, two-column algebraic move list (clickable, current move highlighted),
 stacked clocks (active emphasized), captured-piece trays with material count, board +
 piece theme pickers, promotion picker, flip-board, game-over banner.

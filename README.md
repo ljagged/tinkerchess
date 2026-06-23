@@ -81,8 +81,9 @@ Milestone 1 (polished, deterministic game) is largely complete:
 - ✅ **Convex backend** — `createGame` / `joinByToken` / `makeMove` / `phaseOut` /
   `getGameView`, the fog-of-war boundary, immutable match archive, per-seat move log,
   idempotent submits + stale-view guard, players-only chat.
-- ✅ **Frontend** — "Lab Slate" design system, colorblind-safe board, cburnett
-  pieces, phase tray (countdown rings), figurine move log, history + replay viewer
+- ✅ **Frontend** — "Lab Slate" design system, colorblind-safe board, JohnPablok
+  Cburnett pieces (white-outlined black men; flat + drop-shadow variants), phase
+  tray (countdown rings), figurine move log, history + replay viewer
   (with a fog perspective toggle), Tier-1 settings picker, in-game chat.
 - ✅ **Token-based join** — splash with New Game / Join Game; the initiator shares a
   short `XXXX-XXXX` token and waits; the opponent enters it to join; later joiners
@@ -98,5 +99,6 @@ engine into the client), and all UI follows `DESIGN.md`.
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE). The bundled cburnett piece set
-(`public/pieces/cburnett/`) is GPLv2+; see its `ATTRIBUTION.md`.
+MIT — see [`LICENSE`](./LICENSE). The bundled piece set
+(`public/pieces/johnpablok/`, "JohnPablok's improved Cburnett" by John Pablok) is
+CC-BY-SA 3.0; see its `ATTRIBUTION.md`.

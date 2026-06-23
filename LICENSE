@@ -24,6 +24,7 @@ SOFTWARE.
 
 Third-party assets:
 
-The chess piece set under `public/pieces/cburnett/` ("cburnett", by Colin M.L.
-Burnett, sourced from the lichess project) is licensed under GPLv2+, NOT the MIT
-license above. See `public/pieces/cburnett/ATTRIBUTION.md`.
+The chess piece set under `public/pieces/johnpablok/` ("JohnPablok's improved
+Cburnett chess set" by John Pablok, a modification of the "cburnett" set by
+Colin M.L. Burnett) is licensed under CC-BY-SA 3.0, NOT the MIT license above.
+See `public/pieces/johnpablok/ATTRIBUTION.md`.
