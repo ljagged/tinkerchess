@@ -196,4 +196,51 @@ export function viewFor(state: GameState, viewer: Viewer): GameView {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Post-game reveal view (replay only)
+// ---------------------------------------------------------------------------
+
+export interface RevealPhasedPiece {
+  color: Color;
+  type: Piece["type"];
+  origin: SquareIndex;
+  returnOn: number;
+}
+
+/**
+ * A fully-revealed view for replaying a FINISHED game: exposes BOTH sides' phased
+ * pieces (origin, type, timer). There is no secrecy once a game is over, so unlike
+ * viewFor this hides nothing. Never use this for a live game — it would leak the
+ * fog. Replay's "watch from a seat" perspectives use viewFor instead.
+ */
+export interface RevealView {
+  board: (Piece | null)[];
+  turn: Color;
+  status: GameStatus;
+  wonBySelfCapture: boolean;
+  lastEvent: SelfCaptureEvent | null;
+  captured: { w: Piece["type"][]; b: Piece["type"][] };
+  turnsTaken: { w: number; b: number };
+  /** Every phased piece, both colors, fully revealed. */
+  phased: RevealPhasedPiece[];
+}
+
+export function revealView(state: GameState): RevealView {
+  return {
+    board: state.board.slice(),
+    turn: state.turn,
+    status: state.status,
+    wonBySelfCapture: state.wonBySelfCapture,
+    lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
+    captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
+    turnsTaken: { ...state.turnsTaken },
+    phased: state.phased.map((p) => ({
+      color: p.color,
+      type: p.type,
+      origin: p.origin,
+      returnOn: p.returnOn,
+    })),
+  };
+}
+
 export { cloneState };

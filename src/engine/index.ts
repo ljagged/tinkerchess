@@ -32,8 +32,9 @@ export {
   replay,
   legalMoves,
   viewFor,
+  revealView,
   IllegalActionError,
 } from "./game.js";
-export type { Viewer, GameView, ViewPhasedPiece } from "./game.js";
+export type { Viewer, GameView, ViewPhasedPiece, RevealView, RevealPhasedPiece } from "./game.js";
 export { toNotation, toSeatNotation } from "./notation.js";
 export type { NotationOptions } from "./notation.js";

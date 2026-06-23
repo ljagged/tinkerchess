@@ -111,7 +111,7 @@ export const recordedActionV = v.union(
     kind: v.literal("move"),
     from: v.number(),
     to: v.number(),
-    promotion: v.optional(pieceTypeV),
+    promotion: v.optional(promotionTypeV),
   }),
   v.object({
     kind: v.literal("phaseOut"),

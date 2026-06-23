@@ -224,6 +224,86 @@ export const getMoveLog = query({
   },
 });
 
+/** Convert a persisted recorded action (intent) back into an engine Action. */
+function recordedToAction(r: Doc<"matches">["log"][number]["action"]): engine.Action {
+  if (r.kind === "move") {
+    const move =
+      r.promotion !== undefined ? { from: r.from, to: r.to, promotion: r.promotion } : { from: r.from, to: r.to };
+    return { kind: "move", move };
+  }
+  return { kind: "phaseOut", phaseOut: { from: r.from, duration: r.duration } };
+}
+
+type ReplayPerspective = "w" | "b" | "full";
+
+/** One replay frame: the board (and visible phased pieces) from a perspective. */
+function replayFrame(state: engine.GameState, perspective: ReplayPerspective) {
+  if (perspective === "full") {
+    const v = engine.revealView(state); // post-game: both sides' phased revealed
+    return {
+      board: v.board,
+      turn: v.turn,
+      status: v.status,
+      wonBySelfCapture: v.wonBySelfCapture,
+      lastEvent: v.lastEvent,
+      captured: v.captured,
+      turnsTaken: v.turnsTaken,
+      phased: v.phased,
+      warningSquares: [] as number[],
+    };
+  }
+  const v = engine.viewFor(state, perspective); // what that seat saw at the time
+  return {
+    board: v.board,
+    turn: v.turn,
+    status: v.status,
+    wonBySelfCapture: v.wonBySelfCapture,
+    lastEvent: v.lastEvent,
+    captured: v.captured,
+    turnsTaken: v.turnsTaken,
+    phased: v.yourPhased.map((p) => ({ color: perspective, type: p.type, origin: p.origin, returnOn: p.returnOn })),
+    warningSquares: v.warningSquares,
+  };
+}
+
+/**
+ * Replay an archived match frame-by-frame from a chosen fog perspective:
+ *   "w" / "b" — what that seat saw at each step (their fog as it was), or
+ *   "full"    — everything revealed (both sides' phased pieces).
+ * The move log is always fully revealed (the game is over). The engine re-derives
+ * every state deterministically from the stored ruleset + action log.
+ */
+export const getMatchReplay = query({
+  args: {
+    matchId: v.id("matches"),
+    perspective: v.union(v.literal("w"), v.literal("b"), v.literal("full")),
+  },
+  handler: async (ctx, { matchId, perspective }) => {
+    const match = await ctx.db.get("matches", matchId);
+    if (!match) return null;
+
+    const actions = match.log.map((row) => recordedToAction(row.action));
+    let state = engine.createGame(match.config);
+    const frames = [replayFrame(state, perspective)];
+    for (const action of actions) {
+      state = engine.applyAction(state, action);
+      frames.push(replayFrame(state, perspective));
+    }
+
+    const fig = { figurine: true } as const;
+    const moveLog = match.log.flatMap((row) =>
+      (row.events ?? []).map((ev) => ({
+        ply: row.ply,
+        color: ev.color,
+        san: engine.toNotation(ev),
+        fan: engine.toNotation(ev, fig),
+      })),
+    );
+
+    return { perspective, status: match.status, wonBySelfCapture: match.wonBySelfCapture, frames, moveLog };
+  },
+});
+
 /** Resolve the acting seat and verify it is that seat's turn. */
 async function actingSeat(
   ctx: MutationCtx,

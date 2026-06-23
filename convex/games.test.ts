@@ -212,6 +212,37 @@ describe("games API", () => {
     expect(JSON.stringify(history)).not.toContain(g.whiteSeat);
   });
 
+  it("getMatchReplay reconstructs an archived game with a fog toggle", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.phaseOut, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("d1"),
+      duration: 4,
+    });
+    await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.blackSeat,
+      from: parseSquare("e7"),
+      to: parseSquare("e5"),
+    });
+    await t.mutation(api.games.newGame, { gameId: g.gameId, seatToken: g.initSeat });
+    const hist = await t.query(api.games.getMatchHistory, { gameId: g.gameId, seatToken: g.whiteSeat });
+    const matchId = hist[0]!.matchId;
+
+    const full = await t.query(api.games.getMatchReplay, { matchId, perspective: "full" });
+    expect(full!.frames).toHaveLength(3); // initial + 2 actions
+    // Full reveal: after White's phase-out, White's phased queen is visible.
+    expect(full!.frames[1]!.phased.some((p) => p.color === "w" && p.type === "q")).toBe(true);
+    expect(full!.moveLog[0]!.san).toBe("Qd1~4"); // true log, full reveal
+
+    // Watching from Black's perspective: Black never saw White's phased piece.
+    const asBlack = await t.query(api.games.getMatchReplay, { matchId, perspective: "b" });
+    expect(asBlack!.frames).toHaveLength(3);
+    expect(asBlack!.frames[1]!.phased).toHaveLength(0);
+  });
+
   it("newGame resets the board and keeps both players seated", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);
