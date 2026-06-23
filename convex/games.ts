@@ -296,8 +296,10 @@ export const phaseOut = mutation({
 });
 
 /**
- * Reset an ended game to a fresh board for a rematch, keeping the same seats and
- * join token but RE-RANDOMIZING sides. Either player may trigger it.
+ * Reset a game for a rematch, keeping the same seats and join token but
+ * RE-RANDOMIZING sides. Either player may trigger it. The finished game is first
+ * archived as an immutable match record (history is preserved, not destroyed), and
+ * the rematch carries the same ruleset forward (no silent reset to defaults).
  */
 export const newGame = mutation({
   args: { gameId: v.id("games"), seatToken: v.string() },
@@ -308,18 +310,68 @@ export const newGame = mutation({
     }
     if (game.opponentToken === null) throw new Error("game has not started");
 
-    const initiatorIsWhite = Math.random() < 0.5;
-    await ctx.db.patch("games", gameId, {
-      state: engine.createGame(),
-      whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
-      blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
-    });
-    // Clear this game's move log so ply history restarts cleanly.
+    // Snapshot the played game into the immutable match archive BEFORE resetting.
     const moves = await ctx.db
       .query("moves")
       .withIndex("by_game_and_ply", (q) => q.eq("gameId", gameId))
-      .take(500);
+      .collect();
+    if (moves.length > 0) {
+      moves.sort((a, b) => a.ply - b.ply);
+      await ctx.db.insert("matches", {
+        gameId,
+        endedAt: Date.now(),
+        status: game.state.status,
+        wonBySelfCapture: game.state.wonBySelfCapture ?? false,
+        config: game.state.config,
+        whiteToken: game.whiteToken,
+        blackToken: game.blackToken,
+        log: moves.map((m) => ({
+          ply: m.ply,
+          byColor: m.byColor,
+          action: m.action,
+          events: m.events,
+        })),
+      });
+    }
+
+    const initiatorIsWhite = Math.random() < 0.5;
+    await ctx.db.patch("games", gameId, {
+      // Carry the ruleset forward — a rematch keeps the same Tier-1 settings.
+      state: engine.createGame(game.state.config),
+      whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
+      blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
+    });
+    // Now safe to clear the live move log (already archived above).
     for (const m of moves) await ctx.db.delete("moves", m._id);
     return null;
+  },
+});
+
+/**
+ * The finished games archived under this game's seats, newest first. Returns only
+ * summaries (never the seat tokens); `yourColor` lets the caller default a replay
+ * to their own fog perspective. Full per-game replay is getMatchReplay.
+ */
+export const getMatchHistory = query({
+  args: { gameId: v.id("games"), seatToken: v.optional(v.string()) },
+  handler: async (ctx, { gameId, seatToken }) => {
+    const matches = await ctx.db
+      .query("matches")
+      .withIndex("by_game", (q) => q.eq("gameId", gameId))
+      .collect();
+    matches.sort((a, b) => b.endedAt - a.endedAt);
+    return matches.map((m) => ({
+      matchId: m._id,
+      endedAt: m.endedAt,
+      status: m.status,
+      wonBySelfCapture: m.wonBySelfCapture,
+      plies: m.log.length,
+      yourColor:
+        seatToken && m.whiteToken === seatToken
+          ? ("w" as const)
+          : seatToken && m.blackToken === seatToken
+            ? ("b" as const)
+            : null,
+    }));
   },
 });

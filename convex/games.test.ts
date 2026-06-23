@@ -187,6 +187,31 @@ describe("games API", () => {
     expect(revealed!.log[0]!.san).toBe("Qd1~4");
   });
 
+  it("newGame archives the finished game (history preserved, not destroyed)", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+
+    expect(await t.query(api.games.getMatchHistory, { gameId: g.gameId, seatToken: g.whiteSeat })).toHaveLength(0);
+
+    await t.mutation(api.games.newGame, { gameId: g.gameId, seatToken: g.initSeat });
+
+    const history = await t.query(api.games.getMatchHistory, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(history).toHaveLength(1);
+    expect(history[0]!.plies).toBe(1);
+    expect(history[0]!.yourColor).toBe("w"); // the seat that was White in the archived game
+    // The live log is cleared for the rematch, but the archive kept the history.
+    const liveLog = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(liveLog!.log).toHaveLength(0);
+    // Seat tokens never leak in the history summary.
+    expect(JSON.stringify(history)).not.toContain(g.whiteSeat);
+  });
+
   it("newGame resets the board and keeps both players seated", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

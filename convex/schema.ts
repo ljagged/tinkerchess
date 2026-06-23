@@ -149,4 +149,27 @@ export default defineSchema({
     action: recordedActionV,
     events: v.optional(v.array(gameEventV)),
   }).index("by_game_and_ply", ["gameId", "ply"]),
+
+  // Immutable archive of finished games. A rematch (newGame) recycles the `games`
+  // row, so completed games are snapshotted here instead of being destroyed. A
+  // match is fully self-describing: ruleset + ordered action/event log replays the
+  // whole game (the engine is a deterministic reducer), and the seat->color tokens
+  // let a viewer recover "their" fog perspective for replay.
+  matches: defineTable({
+    gameId: v.id("games"),
+    endedAt: v.number(),
+    status: v.union(v.literal("active"), v.literal("w_won"), v.literal("b_won")),
+    wonBySelfCapture: v.boolean(),
+    config: v.optional(ruleConfigV),
+    whiteToken: v.union(v.string(), v.null()),
+    blackToken: v.union(v.string(), v.null()),
+    log: v.array(
+      v.object({
+        ply: v.number(),
+        byColor: colorV,
+        action: recordedActionV,
+        events: v.optional(v.array(gameEventV)),
+      }),
+    ),
+  }).index("by_game", ["gameId"]),
 });
