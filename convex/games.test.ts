@@ -158,6 +158,35 @@ describe("games API", () => {
     ]);
   });
 
+  it("move log hides the opponent's phase-out duration while active, reveals it on game over", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.phaseOut, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("d1"),
+      duration: 4,
+    });
+
+    const ownerLog = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.whiteSeat });
+    const oppLog = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.blackSeat });
+    expect(ownerLog!.log[0]!.san).toBe("Qd1~4"); // owner sees the duration
+    expect(oppLog!.log[0]!.san).toBe("Qd1~?"); // opponent does not
+    expect(oppLog!.revealed).toBe(false);
+    // The raw timer never crosses the boundary.
+    expect(JSON.stringify(oppLog)).not.toContain("duration");
+    expect(JSON.stringify(oppLog)).not.toContain("returnOn");
+
+    // End the game -> the true log is revealed to everyone.
+    await t.run(async (ctx) => {
+      const game = (await ctx.db.get("games", g.gameId))!;
+      await ctx.db.patch("games", g.gameId, { state: { ...game.state, status: "w_won" } });
+    });
+    const revealed = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.blackSeat });
+    expect(revealed!.revealed).toBe(true);
+    expect(revealed!.log[0]!.san).toBe("Qd1~4");
+  });
+
   it("newGame resets the board and keeps both players seated", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

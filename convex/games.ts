@@ -169,6 +169,61 @@ export const getGameView = query({
   },
 });
 
+/**
+ * The per-seat move log. Renders each derived event to notation (plain + figurine)
+ * with fog rules applied: while the game is ACTIVE, the opponent's phase-out
+ * durations are hidden ("Bf1~?"); spectators see both sides' durations hidden.
+ * Once the game is OVER, the true log is revealed in full to everyone. Raw events
+ * (with durations) are never returned — only rendered strings + public highlight
+ * squares — so the boundary cannot leak a timer.
+ */
+export const getMoveLog = query({
+  args: { gameId: v.id("games"), seatToken: v.optional(v.string()) },
+  handler: async (ctx, { gameId, seatToken }) => {
+    const game = await ctx.db.get("games", gameId);
+    if (!game) return null;
+
+    const waiting = game.opponentToken === null;
+    const viewer: Viewer = waiting ? "spectator" : viewerFromToken(game, seatToken);
+    const revealed = game.state.status !== "active";
+
+    const rows = await ctx.db
+      .query("moves")
+      .withIndex("by_game_and_ply", (q) => q.eq("gameId", gameId))
+      .collect();
+    rows.sort((a, b) => a.ply - b.ply);
+
+    const fig = { figurine: true } as const;
+    const log = rows.flatMap((row) =>
+      (row.events ?? []).map((ev) => {
+        const san = revealed ? engine.toNotation(ev) : engine.toSeatNotation(ev, viewer);
+        const fan = revealed ? engine.toNotation(ev, fig) : engine.toSeatNotation(ev, viewer, fig);
+        const entry: {
+          ply: number;
+          color: "w" | "b";
+          kind: engine.GameEvent["kind"];
+          san: string;
+          fan: string;
+          from?: number;
+          to?: number;
+        } = { ply: row.ply, color: ev.color, kind: ev.kind, san, fan };
+        // Highlight squares — all public (a vanished/appeared square is visible).
+        if (ev.kind === "move") {
+          entry.from = ev.from;
+          entry.to = ev.to;
+        } else if (ev.kind === "phaseOut") {
+          entry.from = ev.from;
+        } else {
+          entry.to = ev.to;
+        }
+        return entry;
+      }),
+    );
+
+    return { log, revealed };
+  },
+});
+
 /** Resolve the acting seat and verify it is that seat's turn. */
 async function actingSeat(
   ctx: MutationCtx,
