@@ -15,13 +15,15 @@ import {
   cloneState,
   fileOf,
   onBoard,
+  opponent,
   pieceAt,
   rankOf,
   squareIndex,
 } from "./board.js";
-import { isAttacked } from "./attacks.js";
+import { isAttacked, inCheck } from "./attacks.js";
 import type {
   Color,
+  GameEvent,
   GameState,
   Move,
   Piece,
@@ -263,6 +265,53 @@ export function applyMove(state: GameState, move: Move): GameState {
   }
 
   return next;
+}
+
+/**
+ * Derive the move event (capture, en-passant, castle, promotion, check,
+ * king-capture) from the pre-state, the move, and the post-move state. Pure: does
+ * not mutate. `post` is the state returned by applyMove (turn not yet flipped).
+ */
+export function deriveMoveEvent(pre: GameState, move: Move, post: GameState): GameEvent {
+  const piece = pieceAt(pre.board, move.from);
+  if (!piece) throw new Error(`no piece on square ${move.from}`);
+  const fromFile = fileOf(move.from);
+  const toFile = fileOf(move.to);
+  const isPawn = piece.type === "p";
+  const isKing = piece.type === "k";
+
+  let capture: { color: Color; type: PieceType } | undefined;
+  let enPassant = false;
+  const normal = pieceAt(pre.board, move.to);
+  if (normal) {
+    capture = { color: normal.color, type: normal.type };
+  } else if (isPawn && move.to === pre.enPassant && fromFile !== toFile) {
+    const ep = pieceAt(pre.board, squareIndex(toFile, rankOf(move.from)));
+    if (ep) {
+      capture = { color: ep.color, type: ep.type };
+      enPassant = true;
+    }
+  }
+
+  const castle: "K" | "Q" | undefined =
+    isKing && Math.abs(toFile - fromFile) === 2 ? (toFile === 6 ? "K" : "Q") : undefined;
+  const promotion: Exclude<PieceType, "p" | "k"> | undefined =
+    isPawn && (rankOf(move.to) === 0 || rankOf(move.to) === 7) ? move.promotion ?? "q" : undefined;
+  const kingCapture = capture?.type === "k";
+  const check = !kingCapture && post.status === "active" && inCheck(post, opponent(piece.color));
+
+  return {
+    kind: "move",
+    color: piece.color,
+    piece: piece.type,
+    from: move.from,
+    to: move.to,
+    ...(capture ? { capture } : {}),
+    ...(enPassant ? { enPassant: true as const } : {}),
+    ...(castle ? { castle } : {}),
+    ...(promotion ? { promotion } : {}),
+    ...(kingCapture ? { kingCapture: true as const } : check ? { check: true as const } : {}),
+  };
 }
 
 function updateCastlingRights(

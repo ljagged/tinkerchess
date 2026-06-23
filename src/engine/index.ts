@@ -21,12 +21,14 @@ export {
   validatePhaseOut,
   applyPhaseOut,
   resolvePhaseIns,
+  resolvePhaseInsWithEvents,
   ownPhased,
   warningSquaresFor,
 } from "./phase.js";
 export {
   createGame,
   applyAction,
+  applyActionWithEvents,
   replay,
   legalMoves,
   viewFor,

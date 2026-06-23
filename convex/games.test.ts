@@ -137,6 +137,27 @@ describe("games API", () => {
     expect(JSON.stringify(blackView)).not.toContain("returnOn");
   });
 
+  it("persists derived events to the move log", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.makeMove, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+    const moves = await t.run(async (ctx) =>
+      ctx.db
+        .query("moves")
+        .withIndex("by_game_and_ply", (q) => q.eq("gameId", g.gameId))
+        .collect(),
+    );
+    expect(moves).toHaveLength(1);
+    expect(moves[0]!.events).toEqual([
+      { kind: "move", color: "w", piece: "p", from: parseSquare("e2"), to: parseSquare("e4") },
+    ]);
+  });
+
   it("newGame resets the board and keeps both players seated", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

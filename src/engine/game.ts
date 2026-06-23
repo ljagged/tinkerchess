@@ -16,11 +16,18 @@
 // make a duration of 1 pointless — the piece would return before the owner moved.)
 
 import { cloneState, initialState, pieceAt } from "./board.js";
-import { applyMove, generateMoves, isLegalMove } from "./moves.js";
-import { ownPhased, resolvePhaseIns, applyPhaseOut, warningSquaresFor } from "./phase.js";
+import { applyMove, deriveMoveEvent, generateMoves, isLegalMove } from "./moves.js";
+import {
+  ownPhased,
+  resolvePhaseInsWithEvents,
+  applyPhaseOut,
+  derivePhaseOutEvent,
+  warningSquaresFor,
+} from "./phase.js";
 import type {
   Action,
   Color,
+  GameEvent,
   GameState,
   GameStatus,
   Move,
@@ -38,15 +45,21 @@ export function createGame(config?: RuleConfig): GameState {
 export class IllegalActionError extends Error {}
 
 /**
- * Apply an action for the side to move, returning the new state. Throws
+ * Apply an action for the side to move, returning the new state AND the derived
+ * events (move/phaseOut, then any end-of-turn phaseIns). Throws
  * IllegalActionError if the action is not legal or the game is already over.
+ * This is the single source of truth; `applyAction` returns only the state.
  */
-export function applyAction(state: GameState, action: Action): GameState {
+export function applyActionWithEvents(
+  state: GameState,
+  action: Action,
+): { state: GameState; events: GameEvent[] } {
   if (state.status !== "active") {
     throw new IllegalActionError("game is over");
   }
 
   const mover = state.turn;
+  const events: GameEvent[] = [];
   let next: GameState;
 
   if (action.kind === "move") {
@@ -57,8 +70,10 @@ export function applyAction(state: GameState, action: Action): GameState {
       throw new IllegalActionError("illegal move");
     }
     next = applyMove(state, action.move);
+    events.push(deriveMoveEvent(state, action.move, next));
   } else {
-    next = applyPhaseOut(state, action.phaseOut); // validates internally
+    next = applyPhaseOut(state, action.phaseOut); // validates internally, throws if illegal
+    events.push(derivePhaseOutEvent(state, action.phaseOut)); // derive from untouched pre-state
   }
 
   // The self-capture notice reflects only the action just applied.
@@ -66,14 +81,24 @@ export function applyAction(state: GameState, action: Action): GameState {
 
   // The action itself may have ended the game (king captured).
   next.turnsTaken[mover] += 1;
-  if (next.status !== "active") return next;
+  if (next.status !== "active") return { state: next, events };
 
   // End-of-turn phase-ins for the mover (may end the game by removing a king).
-  next = resolvePhaseIns(next, mover);
-  if (next.status !== "active") return next;
+  const resolved = resolvePhaseInsWithEvents(next, mover);
+  next = resolved.state;
+  events.push(...resolved.events);
+  if (next.status !== "active") return { state: next, events };
 
   next.turn = mover === "w" ? "b" : "w";
-  return next;
+  return { state: next, events };
+}
+
+/**
+ * Apply an action for the side to move, returning the new state. Throws
+ * IllegalActionError if the action is not legal or the game is already over.
+ */
+export function applyAction(state: GameState, action: Action): GameState {
+  return applyActionWithEvents(state, action).state;
 }
 
 function ownsPiece(state: GameState, sq: SquareIndex, color: Color): boolean {

@@ -17,6 +17,7 @@ import { isAttacked } from "./attacks.js";
 import { DEFAULT_RULE_CONFIG } from "./types.js";
 import type {
   Color,
+  GameEvent,
   GameState,
   PhaseOut,
   PhasedPiece,
@@ -90,6 +91,20 @@ export function applyPhaseOut(state: GameState, action: PhaseOut): GameState {
   return next;
 }
 
+/** Derive the phase-out event from the pre-state and the action. Pure. */
+export function derivePhaseOutEvent(pre: GameState, action: PhaseOut): GameEvent {
+  const piece = pieceAt(pre.board, action.from);
+  if (!piece) throw new Error(`no piece on square ${action.from}`);
+  return {
+    kind: "phaseOut",
+    color: piece.color,
+    piece: piece.type,
+    from: action.from,
+    duration: action.duration,
+    returnOn: pre.turnsTaken[piece.color] + 1 + action.duration,
+  };
+}
+
 /**
  * Resolve any phase-ins due for `color` at the END of their turn — i.e. after
  * the turn counter has been incremented, so `returnOn === turnsTaken[color]`
@@ -97,10 +112,18 @@ export function applyPhaseOut(state: GameState, action: PhaseOut): GameState {
  * owner play the turn with the piece out before it returns. Mutates a cloned
  * copy and returns it. If a king is removed by a phase-in, the game ends.
  */
-export function resolvePhaseIns(state: GameState, color: Color): GameState {
+/**
+ * Resolve due phase-ins for `color` (end of their turn), returning the new state
+ * and the phaseIn events that occurred. `resolvePhaseIns` wraps this for callers
+ * that only need the state.
+ */
+export function resolvePhaseInsWithEvents(
+  state: GameState,
+  color: Color,
+): { state: GameState; events: GameEvent[] } {
   const completed = state.turnsTaken[color];
   const anyDue = state.phased.some((p) => p.color === color && p.returnOn <= completed);
-  if (!anyDue) return state;
+  if (!anyDue) return { state, events: [] };
 
   const next = cloneState(state);
   // Filter from the CLONE so the references match next.phased for removal.
@@ -108,28 +131,45 @@ export function resolvePhaseIns(state: GameState, color: Color): GameState {
   // Deterministic order: earliest timer first, then insertion order.
   due.sort((a, b) => a.returnOn - b.returnOn);
 
+  const events: GameEvent[] = [];
   for (const piece of due) {
     removePhased(next.phased, piece);
     if (next.status !== "active") {
       // Game already ended this resolution; still place the piece, but stop
       // evaluating further captures.
       next.board[piece.origin] = { color: piece.color, type: piece.type };
+      events.push({ kind: "phaseIn", color: piece.color, piece: piece.type, to: piece.origin });
       continue;
     }
     const occupant = pieceAt(next.board, piece.origin);
     next.board[piece.origin] = { color: piece.color, type: piece.type };
     if (occupant) next.captured[occupant.color].push(occupant.type);
-    if (occupant && occupant.type === "k") {
+    const kingCapture = !!occupant && occupant.type === "k";
+    const selfCapture = !!occupant && occupant.color === piece.color && occupant.type !== "k";
+    if (occupant && kingCapture) {
       // The reappearing piece removed a king. Owner of the removed king loses;
       // it's a footgun if the reappearing piece belonged to that same side.
       next.status = occupant.color === "w" ? "b_won" : "w_won";
       next.wonBySelfCapture = occupant.color === piece.color;
-    } else if (occupant && occupant.color === piece.color) {
+    } else if (occupant && selfCapture) {
       // Removed one of the owner's own (non-king) pieces — a footgun to surface.
       next.lastEvent = { by: piece.color, piece: occupant.type, square: piece.origin };
     }
+    events.push({
+      kind: "phaseIn",
+      color: piece.color,
+      piece: piece.type,
+      to: piece.origin,
+      ...(occupant ? { capture: { color: occupant.color, type: occupant.type } } : {}),
+      ...(selfCapture ? { selfCapture: true as const } : {}),
+      ...(kingCapture ? { kingCapture: true as const } : {}),
+    });
   }
-  return next;
+  return { state: next, events };
+}
+
+export function resolvePhaseIns(state: GameState, color: Color): GameState {
+  return resolvePhaseInsWithEvents(state, color).state;
 }
 
 function removePhased(phased: PhasedPiece[], target: PhasedPiece): void {

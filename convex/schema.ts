@@ -67,6 +67,43 @@ export const gameStateV = v.object({
   captured: v.optional(v.object({ w: v.array(pieceTypeV), b: v.array(pieceTypeV) })),
 });
 
+// Derived event log (what an action actually did, all consequences resolved).
+// Mirrors the engine's GameEvent union. Persisted alongside the raw intent so the
+// move log/notation are self-describing and replay-stable as the engine evolves.
+const captureV = v.object({ color: colorV, type: pieceTypeV });
+export const gameEventV = v.union(
+  v.object({
+    kind: v.literal("move"),
+    color: colorV,
+    piece: pieceTypeV,
+    from: v.number(),
+    to: v.number(),
+    capture: v.optional(captureV),
+    enPassant: v.optional(v.literal(true)),
+    castle: v.optional(v.union(v.literal("K"), v.literal("Q"))),
+    promotion: v.optional(pieceTypeV),
+    check: v.optional(v.literal(true)),
+    kingCapture: v.optional(v.literal(true)),
+  }),
+  v.object({
+    kind: v.literal("phaseOut"),
+    color: colorV,
+    piece: pieceTypeV,
+    from: v.number(),
+    duration: v.number(),
+    returnOn: v.number(),
+  }),
+  v.object({
+    kind: v.literal("phaseIn"),
+    color: colorV,
+    piece: pieceTypeV,
+    to: v.number(),
+    capture: v.optional(captureV),
+    selfCapture: v.optional(v.literal(true)),
+    kingCapture: v.optional(v.literal(true)),
+  }),
+);
+
 export const recordedActionV = v.union(
   v.object({
     kind: v.literal("move"),
@@ -101,10 +138,13 @@ export default defineSchema({
   }).index("by_join_token", ["joinToken"]),
 
   // Append-only audit/replay log (full truth — never exposed un-filtered).
+  // `action` is the raw intent; `events` is what it actually did (derived,
+  // optional for back-compat with rows written before the event model existed).
   moves: defineTable({
     gameId: v.id("games"),
     ply: v.number(),
     byColor: colorV,
     action: recordedActionV,
+    events: v.optional(v.array(gameEventV)),
   }).index("by_game_and_ply", ["gameId", "ply"]),
 });

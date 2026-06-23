@@ -190,13 +190,14 @@ async function commit(
   action: engine.Action,
   recorded: Doc<"moves">["action"],
 ) {
-  const next = engine.applyAction(engineState(game), action); // throws on illegal action
+  const { state: next, events } = engine.applyActionWithEvents(engineState(game), action); // throws on illegal action
   await ctx.db.patch("games", game._id, { state: next });
   await ctx.db.insert("moves", {
     gameId: game._id,
     ply: next.turnsTaken.w + next.turnsTaken.b,
     byColor: color,
     action: recorded,
+    events,
   });
   return engine.viewFor(next, color);
 }

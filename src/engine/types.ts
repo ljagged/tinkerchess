@@ -120,6 +120,58 @@ export type Action =
   | { kind: "move"; move: Move }
   | { kind: "phaseOut"; phaseOut: PhaseOut };
 
+/**
+ * A DERIVED event: what actually happened when an action was applied, with all
+ * consequences resolved (captures, castling, en-passant, promotion, check, and
+ * phase-ins). The move log and notation render these; the per-seat log filters
+ * them by fog rules. Persisting derived events (not just the intent `Action`)
+ * keeps the log self-describing and replay-stable even as the engine evolves.
+ *
+ * A single action yields one initiating event (move/phaseOut) followed by zero or
+ * more phaseIn events resolved at the end of the mover's turn.
+ */
+export type GameEvent =
+  | {
+      kind: "move";
+      color: Color;
+      piece: PieceType;
+      from: SquareIndex;
+      to: SquareIndex;
+      /** The piece removed (normal or en-passant capture), if any. */
+      capture?: { color: Color; type: PieceType };
+      /** True when the capture was en passant. */
+      enPassant?: true;
+      /** "K" = kingside, "Q" = queenside, when this move castled. */
+      castle?: "K" | "Q";
+      /** The promoted-to type, when a pawn promoted. */
+      promotion?: Exclude<PieceType, "p" | "k">;
+      /** The move gives check to the opponent. */
+      check?: true;
+      /** The move captured a king (game-ending). */
+      kingCapture?: true;
+    }
+  | {
+      kind: "phaseOut";
+      color: Color;
+      piece: PieceType;
+      from: SquareIndex;
+      duration: number;
+      returnOn: number;
+    }
+  | {
+      kind: "phaseIn";
+      color: Color;
+      piece: PieceType;
+      /** Origin square the piece returns to. */
+      to: SquareIndex;
+      /** The occupant destroyed on return (any color), if any. */
+      capture?: { color: Color; type: PieceType };
+      /** The destroyed occupant was the owner's own (non-king) piece. */
+      selfCapture?: true;
+      /** The return destroyed a king (game-ending). */
+      kingCapture?: true;
+    };
+
 /** Maximum phase-out duration per piece type, in the owner's own turns. */
 export const MAX_PHASE_DURATION: Record<Exclude<PieceType, "p">, number> = {
   k: 1,
