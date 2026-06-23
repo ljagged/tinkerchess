@@ -66,6 +66,9 @@ standard 8×8 board (no bigger boards, no new pieces). The engine is being built
 next, then a chess-domain DSL harvested from real mods. Keep new rule logic small,
 parameterized, and data-driven so it can move into that layer later.
 
+See [`ROADMAP.md`](./ROADMAP.md) for the full three-tier plan and the M1/M2/M3
+milestones.
+
 ## Reporting issues
 
 Open an issue with steps to reproduce. For anything visual, a screenshot helps a lot.

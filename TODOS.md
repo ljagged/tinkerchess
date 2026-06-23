@@ -1,8 +1,7 @@
 # TODOS — Phase Chess
 
-Deferred work, with enough context to pick up cold. Sourced from the CEO review
-(2026-06-22) of the M1 design doc
-(`~/.gstack/projects/ljagged-phase-chess/ljagged-ljagged-plan-ceo-review-design-20260622-133058.md`).
+Deferred work, with enough context to pick up cold. Distilled from the M1 design
+review (2026-06-22). The durable product/engine roadmap lives in [`ROADMAP.md`](./ROADMAP.md).
 
 Effort scale: human-team estimate → with CC+gstack (S→S, M→S, L→M, XL→L).
 
@@ -38,8 +37,8 @@ Effort scale: human-team estimate → with CC+gstack (S→S, M→S, L→M, XL→
 
 ---
 
-## Roadmap (not TODOs — tracked in the design doc)
+## Roadmap (not TODOs — see ROADMAP.md)
 
-The mod system (Tier-2 predicate DSL, Tier-3 scripted mods, the chess DSL) is the M2/M3
-roadmap in the design doc, not loose TODO items. See the design doc's "Recommended
-Approach" and "Authoring power partition" sections.
+The mod system (Tier-1 settings, Tier-2 predicate DSL, Tier-3 scripted mods, the chess
+DSL) is the M2/M3 roadmap, not loose TODO items. See [`ROADMAP.md`](./ROADMAP.md) —
+specifically "Authoring power partition (three tiers)" and "Milestones".

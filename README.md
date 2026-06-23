@@ -90,6 +90,7 @@ Milestone 1 (polished, deterministic game) is largely complete:
   spectate. White/Black are assigned **randomly** at join.
 - ⬜ **Remaining M1 polish** — how-to-play tutorial, sound/motion on phase events.
 - ⬜ **Beyond M1** — the mod system (uploadable rule modules), accounts, ratings.
+  See [`ROADMAP.md`](./ROADMAP.md) for the full plan.
 
 ## Contributing
 
