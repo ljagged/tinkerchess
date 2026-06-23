@@ -69,7 +69,8 @@ function CapturedTray({
           style={{
             fontSize: glyphSize,
             lineHeight: 1,
-            color: color === "w" ? "#efe8df" : "#6f6358",
+            // Distinguished by luminance (colorblind-safe), not hue.
+            color: color === "w" ? "#edeff2" : "#7c8a99",
           }}
         >
           {GLYPH[t]}
@@ -138,6 +139,8 @@ export function GameClient({ gameId }: { gameId: string }) {
             boardWidth={boardWidth}
             arePiecesDraggable={false}
             customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
+            customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
+            customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
           />
         </div>
         <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
@@ -171,19 +174,23 @@ export function GameClient({ gameId }: { gameId: string }) {
   const myTurn =
     view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
-  // --- square highlights ---
+  // --- square highlights (Lab Slate — color ALWAYS paired with a shape cue;
+  // never color alone, per DESIGN.md: the primary user is colorblind) ---
   const styles: Record<string, CSSProperties> = {};
+  // Opponent return warning: orange + DASHED outline (distinct shape).
   for (const sq of view.warningSquares) {
-    styles[idxToSquare(sq)] = { boxShadow: "inset 0 0 0 4px rgba(210,101,79,0.85)" };
+    styles[idxToSquare(sq)] = { outline: "3px dashed #ff8a3d", outlineOffset: "-3px" };
   }
+  // Your phased-piece origin: cyan + SOLID border + tint (the "phase" vocabulary).
   for (const ph of view.yourPhased) {
     styles[idxToSquare(ph.origin)] = {
-      boxShadow: "inset 0 0 0 4px rgba(200,150,74,0.7)",
-      background: "rgba(200,150,74,0.12)",
+      boxShadow: "inset 0 0 0 4px #27c2d8",
+      background: "rgba(39,194,216,0.15)",
     };
   }
+  // Selected piece to phase: thick neutral border.
   if (phaseFrom !== null) {
-    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px rgba(111,174,111,0.95)" };
+    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" };
   }
 
   // --- handlers ---
@@ -329,6 +336,8 @@ export function GameClient({ gameId }: { gameId: string }) {
           onPromotionCheck={() => false}
           customSquareStyles={styles as BoardProps["customSquareStyles"]}
           customBoardStyle={{ borderRadius: "8px" }}
+          customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
+          customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
         />
         {/* Bottom tray: pieces the bottom player captured (the top player's losses). */}
         <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
@@ -415,8 +424,8 @@ export function GameClient({ gameId }: { gameId: string }) {
               </ul>
             )}
             {view.warningSquares.length > 0 && (
-              <div style={{ marginTop: "0.6rem", color: "var(--danger)" }}>
-                ⚠ An opponent piece returns next turn (highlighted).
+              <div style={{ marginTop: "0.6rem", color: "var(--warning)" }}>
+                ⚠ An opponent piece returns next turn (dashed square).
               </div>
             )}
           </div>

@@ -1,13 +1,37 @@
+/* Fonts (Lab Slate — see DESIGN.md). Display: Cabinet Grotesk; body: Hanken
+   Grotesk; data/notation: JetBrains Mono. All open-licensed. */
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&display=swap");
+
 :root {
-  --bg: #14110f;
-  --panel: #211c19;
-  --border: #3a322c;
-  --text: #ece5dd;
-  --muted: #a8998b;
-  --accent: #c8964a;
-  --accent-dim: #6b5430;
-  --danger: #d2654f;
+  /* Lab Slate (dark) — the project design system. See DESIGN.md. */
+  --bg: #181c22;
+  --panel: #222933;
+  --panel-2: #2b333f;
+  --border: #313a46;
+  --text: #e8edf2;
+  --muted: #8a95a1;
+
+  /* State vocabulary — each color reserved for ONE meaning and ALWAYS paired with
+     a shape/border cue (the primary user is colorblind; never color alone). */
+  --phase: #27c2d8; /* your hidden / phased pieces (solid border) */
+  --warning: #ff8a3d; /* opponent return warning (dashed) */
+  --last-move: #f2c84b; /* last move (border) */
+  --legal: #3da5a0; /* legal move / capture */
+  --danger: #e5484d; /* check / destruction */
   --good: #6fae6f;
+
+  /* Board squares — colorblind-safe (high luminance delta, no red/green). */
+  --sq-light: #c9d2dc;
+  --sq-dark: #3e586e;
+
+  --accent: #27c2d8;
+  --accent-ink: #06222a; /* readable ink on the cyan accent */
+  --radius: 14px;
+
+  --display: "Cabinet Grotesk", system-ui, sans-serif;
+  --body: "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * {
@@ -20,7 +44,15 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--display);
+  letter-spacing: -0.01em;
 }
 
 a {
@@ -31,10 +63,10 @@ button {
   font: inherit;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
   padding: 0.5rem 0.9rem;
-  border-radius: 8px;
+  border-radius: 10px;
   transition: border-color 0.15s ease;
 }
 button:hover:not(:disabled) {
@@ -47,7 +79,7 @@ button:disabled {
 
 .primary {
   background: var(--accent);
-  color: #1a1410;
+  color: var(--accent-ink);
   border-color: var(--accent);
   font-weight: 600;
 }
@@ -61,12 +93,16 @@ button:disabled {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 1rem 1.1rem;
 }
 
 .muted {
   color: var(--muted);
+}
+
+.mono {
+  font-family: var(--mono);
 }
 
 .row {
