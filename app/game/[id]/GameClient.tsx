@@ -23,7 +23,6 @@ const idxToSquare = (i: number) => `${FILES[i % 8]}${Math.floor(i / 8) + 1}`;
 const squareToIdx = (s: string) => (s.charCodeAt(1) - 49) * 8 + (s.charCodeAt(0) - 97);
 const pieceCode = (p: { color: "w" | "b"; type: string }) => p.color + p.type.toUpperCase();
 
-const MAX_PHASE: Record<string, number> = { n: 2, b: 2, r: 3, q: 4, k: 1 };
 const PIECE_NAME: Record<string, string> = {
   p: "Pawn",
   n: "Knight",
@@ -163,9 +162,11 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
 function PhaseTray({
   phased,
   color,
+  rules,
 }: {
   phased: GameView["yourPhased"];
   color: "w" | "b";
+  rules: GameView["rules"];
 }) {
   if (phased.length === 0) {
     return <div className="muted" style={{ marginTop: "0.4rem" }}>None.</div>;
@@ -173,7 +174,7 @@ function PhaseTray({
   return (
     <div className="phasetray">
       {phased.map((ph, i) => {
-        const max = MAX_PHASE[ph.type] ?? 1;
+        const max = rules[ph.type] || 1;
         const frac = Math.max(0, Math.min(1, ph.turnsRemaining / max));
         return (
           <div
@@ -475,7 +476,8 @@ export function GameClient({ gameId }: { gameId: string }) {
   const onSquareClick: NonNullable<BoardProps["onSquareClick"]> = (square) => {
     if (!phaseMode || !myTurn) return;
     const p = view.board[squareToIdx(square)];
-    if (!p || p.color !== myColor || p.type === "p") {
+    // Phase-eligibility comes from the game's ruleset, not a hardcoded list.
+    if (!p || p.color !== myColor || (view.rules[p.type] ?? 0) === 0) {
       setPhaseFrom(null);
       return;
     }
@@ -508,7 +510,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   };
 
   const selectedType = phaseFrom !== null ? view.board[phaseFrom]?.type : undefined;
-  const selectedMax = selectedType ? (MAX_PHASE[selectedType] ?? 1) : 1;
+  const selectedMax = selectedType ? view.rules[selectedType] || 1 : 1;
 
   // --- status text ---
   const colorName = (c: "w" | "b") => (c === "w" ? "White" : "Black");
@@ -617,6 +619,22 @@ export function GameClient({ gameId }: { gameId: string }) {
           </div>
         </div>
 
+        <div className="panel">
+          <strong>Rules</strong>
+          <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
+            {(() => {
+              const order: Array<[keyof GameView["rules"], string]> = [
+                ["p", "Pawn"], ["n", "Knight"], ["b", "Bishop"],
+                ["r", "Rook"], ["q", "Queen"], ["k", "King"],
+              ];
+              const phaseable = order.filter(([t]) => view.rules[t] > 0);
+              return phaseable.length === 0
+                ? "No pieces can phase."
+                : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ");
+            })()}
+          </div>
+        </div>
+
         {selfCaptureText && (
           <div className="panel" style={{ color: "var(--danger)" }}>{selfCaptureText}</div>
         )}
@@ -674,7 +692,7 @@ export function GameClient({ gameId }: { gameId: string }) {
         {isPlayer && (
           <div className="panel">
             <strong>Your phased pieces</strong>
-            <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} />
+            <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
             {view.warningSquares.length > 0 && (
               <div style={{ marginTop: "0.6rem", color: "var(--warning)" }}>
                 ⚠ An opponent piece returns next turn (dashed square).

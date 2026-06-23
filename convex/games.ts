@@ -2,8 +2,25 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { v } from "convex/values";
-import { pieceTypeV } from "./schema";
+import { pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
+
+const PIECE_TYPES = ["p", "n", "b", "r", "q", "k"] as const;
+const MAX_CONFIG_DURATION = 8;
+
+/**
+ * Clamp a client-supplied ruleset to safe, integer durations (0..8). Returns
+ * undefined when no config is given (engine then uses DEFAULT_RULE_CONFIG).
+ */
+function sanitizeConfig(input: engine.RuleConfig | undefined): engine.RuleConfig | undefined {
+  if (!input) return undefined;
+  const md = {} as Record<engine.PieceType, number>;
+  for (const t of PIECE_TYPES) {
+    const raw = input.maxPhaseDuration[t];
+    md[t] = Math.max(0, Math.min(MAX_CONFIG_DURATION, Math.floor(Number.isFinite(raw) ? raw : 0)));
+  }
+  return { maxPhaseDuration: md };
+}
 
 // The Convex layer is thin: it owns identity (which seat is acting), persistence,
 // and the fog-of-war boundary, and delegates ALL rules to the pure engine.
@@ -90,12 +107,12 @@ function engineState(game: Doc<"games">): engine.GameState {
 
 /** Create a game. The creator gets a join token to share and their seat token. */
 export const createGame = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { config: v.optional(ruleConfigV) },
+  handler: async (ctx, { config }) => {
     const joinToken = await uniqueJoinToken(ctx);
     const initiatorToken = crypto.randomUUID();
     const gameId = await ctx.db.insert("games", {
-      state: engine.createGame(),
+      state: engine.createGame(sanitizeConfig(config)),
       joinToken,
       initiatorToken,
       opponentToken: null,
@@ -160,11 +177,15 @@ export const getGameView = query({
 
     const base = engine.viewFor(engineState(game), viewer);
     const showToken = role === "initiator" || role === "player";
+    // The active ruleset (Tier-1 Settings) is public — both players see what's in
+    // effect, and the joiner sees the rules they joined.
+    const rules = (engineState(game).config ?? engine.DEFAULT_RULE_CONFIG).maxPhaseDuration;
     return {
       ...base,
       phase: waiting ? ("waiting" as const) : ("active" as const),
       role,
       joinToken: showToken ? game.joinToken : null,
+      rules,
     };
   },
 });

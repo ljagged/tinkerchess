@@ -8,12 +8,27 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
 import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
 
+type PieceKey = "p" | "n" | "b" | "r" | "q" | "k";
+const PIECE_ROWS: Array<[PieceKey, string]> = [
+  ["p", "Pawn"],
+  ["n", "Knight"],
+  ["b", "Bishop"],
+  ["r", "Rook"],
+  ["q", "Queen"],
+  ["k", "King"],
+];
+// Standard Phase Chess ruleset (mirrors the engine's DEFAULT_RULE_CONFIG).
+const STANDARD_RULES: Record<PieceKey, number> = { p: 0, n: 2, b: 2, r: 3, q: 4, k: 1 };
+const MAX_RULE_DURATION = 8;
+
 export default function Home() {
   const createGame = useMutation(api.games.createGame);
   const joinByToken = useMutation(api.games.joinByToken);
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [rules, setRules] = useState<Record<PieceKey, number>>(STANDARD_RULES);
   const [showJoin, setShowJoin] = useState(false);
   const [token, setToken] = useState("");
   const [joining, setJoining] = useState(false);
@@ -48,16 +63,20 @@ export default function Home() {
   const onNewGame = async () => {
     setBusy(true);
     try {
-      const { gameId, seatToken } = await createGame({});
+      const { gameId, seatToken } = await createGame({ config: { maxPhaseDuration: rules } });
       saveSeat(gameId, { seatToken });
       savePending(gameId);
       setPendingId(gameId);
+      setShowSettings(false);
     } catch (e) {
       alert(`Could not create a game: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
   };
+
+  const setDuration = (t: PieceKey, delta: number) =>
+    setRules((r) => ({ ...r, [t]: Math.max(0, Math.min(MAX_RULE_DURATION, r[t] + delta)) }));
 
   const cancelWaiting = () => {
     clearPending();
@@ -130,19 +149,57 @@ export default function Home() {
         <strong>capture the king to win.</strong>
       </p>
 
-      <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 420 }}>
-        <p style={{ marginTop: 0 }}>
-          Start a game and share the token, or join one with a token you were given.
-        </p>
-        <div className="row">
-          <button className="primary" onClick={onNewGame} disabled={busy}>
-            {busy ? "Creating…" : "New Game"}
-          </button>
-          <button onClick={openJoin} disabled={busy}>
-            Join Game
-          </button>
+      {showSettings ? (
+        <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 460, display: "grid", gap: "0.8rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <strong>Game rules</strong>
+            <button style={{ fontSize: "0.85rem" }} onClick={() => setRules(STANDARD_RULES)}>
+              Standard
+            </button>
+          </div>
+          <div className="muted" style={{ fontSize: "0.88rem" }}>
+            Max turns each piece may phase out (0 = can&rsquo;t phase). Both players see these.
+          </div>
+          <div style={{ display: "grid", gap: "0.45rem" }}>
+            {PIECE_ROWS.map(([t, name]) => (
+              <div key={t} className="row" style={{ justifyContent: "space-between" }}>
+                <span>{name}</span>
+                <div className="row" style={{ gap: "0.4rem" }}>
+                  <button onClick={() => setDuration(t, -1)} disabled={rules[t] <= 0} aria-label={`Decrease ${name}`}>
+                    −
+                  </button>
+                  <span className="mono" style={{ minWidth: "1.5em", textAlign: "center" }}>
+                    {rules[t] === 0 ? "—" : rules[t]}
+                  </span>
+                  <button onClick={() => setDuration(t, 1)} disabled={rules[t] >= MAX_RULE_DURATION} aria-label={`Increase ${name}`}>
+                    +
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="row" style={{ justifyContent: "flex-end", marginTop: "0.2rem" }}>
+            <button onClick={() => setShowSettings(false)} disabled={busy}>Cancel</button>
+            <button className="primary" onClick={onNewGame} disabled={busy}>
+              {busy ? "Creating…" : "Create game"}
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 420 }}>
+          <p style={{ marginTop: 0 }}>
+            Start a game and share the token, or join one with a token you were given.
+          </p>
+          <div className="row">
+            <button className="primary" onClick={() => setShowSettings(true)} disabled={busy}>
+              New Game
+            </button>
+            <button onClick={openJoin} disabled={busy}>
+              Join Game
+            </button>
+          </div>
+        </div>
+      )}
 
       {showJoin && (
         <div
