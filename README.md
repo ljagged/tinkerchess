@@ -43,6 +43,22 @@ pairs a shape/border/motion cue with a label (the primary player is colorblind).
   intentionally **not** bundled into the client — the server is authoritative and
   the client only renders the filtered view it's given.
 
+## Documentation
+
+Full docs live in [`docs/`](./docs), organized by what you're trying to do:
+
+- **[Your first game](./docs/tutorial-your-first-game.md)** (tutorial) — play a
+  complete game start to finish, including phasing, from zero.
+- **[Engine API](./docs/reference-engine-api.md)** (reference) — the pure rules
+  engine's public surface: types, lifecycle, phasing, views, notation.
+- **[Backend API](./docs/reference-backend-api.md)** (reference) — the Convex
+  queries/mutations, the seat-token identity model, and the data model.
+- **[Fog of war](./docs/explanation-fog-of-war.md)** (explanation) — how hidden
+  information is enforced and what the boundary deliberately reveals.
+- **[Determinism & replay](./docs/explanation-determinism-and-replay.md)**
+  (explanation) — why a game is stored as actions, not snapshots, and how replay
+  reproduces each seat's fog.
+
 ## Requirements
 
 - **Node ≥ 22.** The Convex CLI requires `util.styleText` (Node 21.7+/20.12+);
@@ -88,7 +104,9 @@ Milestone 1 (polished, deterministic game) is largely complete:
 - ✅ **Token-based join** — splash with New Game / Join Game; the initiator shares a
   short `XXXX-XXXX` token and waits; the opponent enters it to join; later joiners
   spectate. White/Black are assigned **randomly** at join.
-- ⬜ **Remaining M1 polish** — how-to-play tutorial, sound/motion on phase events.
+- ⬜ **Remaining M1 polish** — in-app how-to-play onboarding (a written
+  walkthrough now lives in [`docs/`](./docs/tutorial-your-first-game.md)),
+  sound/motion on phase events.
 - ⬜ **Beyond M1** — the mod system (uploadable rule modules), accounts, ratings.
   See [`ROADMAP.md`](./ROADMAP.md) for the full plan.
 
