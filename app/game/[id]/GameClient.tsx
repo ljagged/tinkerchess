@@ -42,6 +42,28 @@ const GLYPHS: Record<"w" | "b", Record<string, string>> = {
 // Sort order by value: pawn < knight < bishop < rook < queen (bishop just over knight).
 const VALUE_ORDER: Record<string, number> = { p: 0, n: 1, b: 2, r: 3, q: 4 };
 
+// cburnett piece set (lichess open standard, GPLv2+; SVGs in public/pieces/cburnett).
+// Renders each piece as an SVG sized to the square, per DESIGN.md.
+const PIECE_CODES = [
+  "wP", "wN", "wB", "wR", "wQ", "wK",
+  "bP", "bN", "bB", "bR", "bQ", "bK",
+] as const;
+const cburnettPieces = Object.fromEntries(
+  PIECE_CODES.map((code) => [
+    code,
+    ({ squareWidth }: { squareWidth: number }) => (
+      <img
+        src={`/pieces/cburnett/${code}.svg`}
+        alt={code}
+        width={squareWidth}
+        height={squareWidth}
+        draggable={false}
+        style={{ display: "block" }}
+      />
+    ),
+  ]),
+) as BoardProps["customPieces"];
+
 /**
  * A fixed-height strip of captured pieces (half-size, value-sorted, kings
  * omitted). Height is reserved even when empty so the board never shifts.
@@ -231,6 +253,7 @@ export function GameClient({ gameId }: { gameId: string }) {
             customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
             customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
             customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
+            customPieces={cburnettPieces}
           />
         </div>
         <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
@@ -428,6 +451,7 @@ export function GameClient({ gameId }: { gameId: string }) {
           customBoardStyle={{ borderRadius: "8px" }}
           customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
           customDarkSquareStyle={{ backgroundColor: "#3e586e" }}
+          customPieces={cburnettPieces}
         />
         {/* Bottom tray: pieces the bottom player captured (the top player's losses). */}
         <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
