@@ -8,18 +8,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
 import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
 
-type PieceKey = "p" | "n" | "b" | "r" | "q" | "k";
-const PIECE_ROWS: Array<[PieceKey, string]> = [
-  ["p", "Pawn"],
-  ["n", "Knight"],
-  ["b", "Bishop"],
-  ["r", "Rook"],
-  ["q", "Queen"],
-  ["k", "King"],
-];
-// Standard Phase Chess ruleset (mirrors the engine's DEFAULT_RULE_CONFIG).
-const STANDARD_RULES: Record<PieceKey, number> = { p: 0, n: 2, b: 2, r: 3, q: 4, k: 1 };
-const MAX_RULE_DURATION = 8;
+const NAME_KEY = "phasechess:name";
+const MAX_NAME = 24;
 
 export default function Home() {
   const createGame = useMutation(api.games.createGame);
@@ -27,13 +17,31 @@ export default function Home() {
   const router = useRouter();
 
   const [busy, setBusy] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [rules, setRules] = useState<Record<PieceKey, number>>(STANDARD_RULES);
+  const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [token, setToken] = useState("");
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [spectatorGame, setSpectatorGame] = useState<string | null>(null);
+
+  // Display name, remembered locally so returning players don't retype it. The
+  // ruleset picker is intentionally hidden for now (defaults apply); it returns
+  // with a fuller settings screen later.
+  const [playerName, setPlayerName] = useState("");
+  useEffect(() => {
+    try {
+      setPlayerName(localStorage.getItem(NAME_KEY) ?? "");
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  const rememberName = (n: string) => {
+    try {
+      localStorage.setItem(NAME_KEY, n);
+    } catch {
+      /* ignore */
+    }
+  };
 
   // A game the initiator created and is waiting on. We stay on the splash and
   // only go to the board once an opponent joins (so they never see the board —
@@ -61,22 +69,21 @@ export default function Home() {
   }, [pendingId, pendingView, router]);
 
   const onNewGame = async () => {
+    const name = playerName.trim() || undefined;
+    rememberName(playerName.trim());
     setBusy(true);
     try {
-      const { gameId, seatToken } = await createGame({ config: { maxPhaseDuration: rules } });
+      const { gameId, seatToken } = await createGame({ name });
       saveSeat(gameId, { seatToken });
       savePending(gameId);
       setPendingId(gameId);
-      setShowSettings(false);
+      setShowCreate(false);
     } catch (e) {
       alert(`Could not create a game: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }
   };
-
-  const setDuration = (t: PieceKey, delta: number) =>
-    setRules((r) => ({ ...r, [t]: Math.max(0, Math.min(MAX_RULE_DURATION, r[t] + delta)) }));
 
   const cancelWaiting = () => {
     clearPending();
@@ -97,8 +104,12 @@ export default function Home() {
     }
     setJoining(true);
     setJoinError(null);
+    rememberName(playerName.trim());
     try {
-      const { gameId, role, seatToken } = await joinByToken({ token });
+      const { gameId, role, seatToken } = await joinByToken({
+        token,
+        name: playerName.trim() || undefined,
+      });
       saveSeat(gameId, { seatToken });
       if (role === "spectator") {
         setJoining(false);
@@ -149,37 +160,25 @@ export default function Home() {
         <strong>capture the king to win.</strong>
       </p>
 
-      {showSettings ? (
-        <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 460, display: "grid", gap: "0.8rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <strong>Game rules</strong>
-            <button style={{ fontSize: "0.85rem" }} onClick={() => setRules(STANDARD_RULES)}>
-              Standard
-            </button>
-          </div>
-          <div className="muted" style={{ fontSize: "0.88rem" }}>
-            Max turns each piece may phase out (0 = can&rsquo;t phase). Both players see these.
-          </div>
-          <div style={{ display: "grid", gap: "0.45rem" }}>
-            {PIECE_ROWS.map(([t, name]) => (
-              <div key={t} className="row" style={{ justifyContent: "space-between" }}>
-                <span>{name}</span>
-                <div className="row" style={{ gap: "0.4rem" }}>
-                  <button onClick={() => setDuration(t, -1)} disabled={rules[t] <= 0} aria-label={`Decrease ${name}`}>
-                    −
-                  </button>
-                  <span className="mono" style={{ minWidth: "1.5em", textAlign: "center" }}>
-                    {rules[t] === 0 ? "—" : rules[t]}
-                  </span>
-                  <button onClick={() => setDuration(t, 1)} disabled={rules[t] >= MAX_RULE_DURATION} aria-label={`Increase ${name}`}>
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div className="row" style={{ justifyContent: "flex-end", marginTop: "0.2rem" }}>
-            <button onClick={() => setShowSettings(false)} disabled={busy}>Cancel</button>
+      {showCreate ? (
+        <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 420, display: "grid", gap: "0.9rem" }}>
+          <strong>New game</strong>
+          <label className="field-label">
+            Player name
+            <input
+              className="text-input"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value.slice(0, MAX_NAME))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !busy) onNewGame();
+              }}
+              placeholder="e.g. Alex"
+              maxLength={MAX_NAME}
+              autoFocus
+            />
+          </label>
+          <div className="row" style={{ justifyContent: "flex-end" }}>
+            <button onClick={() => setShowCreate(false)} disabled={busy}>Cancel</button>
             <button className="primary" onClick={onNewGame} disabled={busy}>
               {busy ? "Creating…" : "Create game"}
             </button>
@@ -191,7 +190,7 @@ export default function Home() {
             Start a game and share the token, or join one with a token you were given.
           </p>
           <div className="row">
-            <button className="primary" onClick={() => setShowSettings(true)} disabled={busy}>
+            <button className="primary" onClick={() => setShowCreate(true)} disabled={busy}>
               New Game
             </button>
             <button onClick={openJoin} disabled={busy}>
@@ -235,8 +234,21 @@ export default function Home() {
               </>
             ) : (
               <>
-                <strong>Enter the game token</strong>
-                <ChunkedTokenInput value={token} onChange={setToken} onEnter={onJoin} autoFocus />
+                <strong>Join game</strong>
+                <label className="field-label">
+                  Player name
+                  <input
+                    className="text-input"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value.slice(0, MAX_NAME))}
+                    placeholder="e.g. Alex"
+                    maxLength={MAX_NAME}
+                  />
+                </label>
+                <label className="field-label">
+                  Game token
+                  <ChunkedTokenInput value={token} onChange={setToken} onEnter={onJoin} autoFocus />
+                </label>
                 {joinError && <div style={{ color: "var(--danger)" }}>{joinError}</div>}
                 <div className="row" style={{ justifyContent: "flex-end" }}>
                   <button onClick={() => setShowJoin(false)}>Cancel</button>

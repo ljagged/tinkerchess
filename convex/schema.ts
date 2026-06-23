@@ -136,6 +136,10 @@ export default defineSchema({
     opponentToken: v.union(v.string(), v.null()),
     whiteToken: v.union(v.string(), v.null()),
     blackToken: v.union(v.string(), v.null()),
+    // Display names, captured at create/join. Optional for back-compat; resolved
+    // to colors in getGameView via the white/black token mapping.
+    initiatorName: v.optional(v.string()),
+    opponentName: v.optional(v.string()),
     createdAt: v.number(),
   }).index("by_join_token", ["joinToken"]),
 

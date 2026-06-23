@@ -746,7 +746,7 @@ export function GameClient({ gameId }: { gameId: string }) {
     const row = orient === "black" ? rank : 7 - rank;
     return { left: col * cell, top: row * cell };
   };
-  const POP_W = 196;
+  const POP_W = 212;
   const POP_H = 96;
   let popLeft = 0;
   let popTop = 0;
@@ -890,6 +890,12 @@ export function GameClient({ gameId }: { gameId: string }) {
   const topColor: "w" | "b" = bottomColor === "w" ? "b" : "w";
   const glyphSize = Math.round(boardWidth / 14);
 
+  // Player names (entered at create/join). Fall back to You/Opponent for the
+  // viewer's seats, or White/Black for a spectator.
+  const names = view.players;
+  const bottomLabel = names[bottomColor] ?? (isPlayer ? "You" : colorName(bottomColor));
+  const topLabel = names[topColor] ?? (isPlayer ? "Opponent" : colorName(topColor));
+
   // Phase ruleset, formatted once for the Rules popover.
   const rulesOrder: Array<[keyof GameView["rules"], string]> = [
     ["p", "Pawn"], ["n", "Knight"], ["b", "Bishop"],
@@ -919,7 +925,7 @@ export function GameClient({ gameId }: { gameId: string }) {
           <div className="board-stack-head" style={{ width: GUTTER + boardWidth }}>
             <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
               <span className="who">
-                Opponent
+                {topLabel}
                 {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
@@ -1047,7 +1053,7 @@ export function GameClient({ gameId }: { gameId: string }) {
 
             <div className={`player-row ${myTurn ? "to-move" : ""}`}>
               <span className="who">
-                You
+                {bottomLabel}
                 {myTurn && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />

@@ -88,6 +88,23 @@ function requireGame(game: Doc<"games"> | null): Doc<"games"> {
   return game;
 }
 
+/** Trim and length-cap a player-supplied display name; "" -> undefined. */
+function sanitizeName(name: string | undefined): string | undefined {
+  const trimmed = (name ?? "").trim().slice(0, 24);
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+/** Resolve stored names to colors via the white/black token mapping. */
+function playerNames(game: Doc<"games">): { w: string | null; b: string | null } {
+  const nameForToken = (token: string | null) =>
+    token === game.initiatorToken
+      ? game.initiatorName ?? null
+      : token && token === game.opponentToken
+        ? game.opponentName ?? null
+        : null;
+  return { w: nameForToken(game.whiteToken), b: nameForToken(game.blackToken) };
+}
+
 /**
  * Coerce a stored game's state into a full engine GameState (wonBySelfCapture /
  * lastEvent are stored optional for back-compat; the engine treats absence as
@@ -107,8 +124,8 @@ function engineState(game: Doc<"games">): engine.GameState {
 
 /** Create a game. The creator gets a join token to share and their seat token. */
 export const createGame = mutation({
-  args: { config: v.optional(ruleConfigV) },
-  handler: async (ctx, { config }) => {
+  args: { config: v.optional(ruleConfigV), name: v.optional(v.string()) },
+  handler: async (ctx, { config, name }) => {
     const joinToken = await uniqueJoinToken(ctx);
     const initiatorToken = crypto.randomUUID();
     const gameId = await ctx.db.insert("games", {
@@ -118,6 +135,7 @@ export const createGame = mutation({
       opponentToken: null,
       whiteToken: null,
       blackToken: null,
+      initiatorName: sanitizeName(name),
       createdAt: Date.now(),
     });
     return { gameId, joinToken, seatToken: initiatorToken };
@@ -130,8 +148,8 @@ export const createGame = mutation({
  * if no game matches the token.
  */
 export const joinByToken = mutation({
-  args: { token: v.string() },
-  handler: async (ctx, { token }) => {
+  args: { token: v.string(), name: v.optional(v.string()) },
+  handler: async (ctx, { token, name }) => {
     const canonical = canonicalToken(token);
     const game = await ctx.db
       .query("games")
@@ -146,6 +164,7 @@ export const joinByToken = mutation({
         opponentToken,
         whiteToken: initiatorIsWhite ? game.initiatorToken : opponentToken,
         blackToken: initiatorIsWhite ? opponentToken : game.initiatorToken,
+        opponentName: sanitizeName(name),
       });
       return { gameId: game._id, role: "player" as const, seatToken: opponentToken };
     }
@@ -186,6 +205,7 @@ export const getGameView = query({
       role,
       joinToken: showToken ? game.joinToken : null,
       rules,
+      players: playerNames(game),
     };
   },
 });
