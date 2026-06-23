@@ -5,9 +5,10 @@
 //   - letters (default): SAN-style — "Nf3", "exd5", "O-O", "a8=Q"
 //   - figurine: Unicode piece glyphs — "♘f3", "♗f1~3"
 //
-// Phase Chess extensions to SAN:
-//   - phase-out:  <piece><from>~<duration>     e.g. "Bf1~3"  (bishop on f1 phases 3)
-//   - phase-in:   <piece>@<square>[x<piece>]   e.g. "R@a1"  /  "R@a1xN"
+// Phase Chess extensions to SAN (arrows read as the piece leaving / returning to
+// the board; ↑ = out, ↓ = back in):
+//   - phase-out:  <piece><from>↑<duration>     e.g. "Bf1↑3"  (bishop on f1 phases 3)
+//   - phase-in:   <piece>↓<square>[x<piece>]   e.g. "R↓a1"  /  "R↓a1xN"
 //   - king capture (the win condition, no checkmate): trailing "#"
 //   - check: trailing "+"
 //   - self-capture (a footgun): trailing "(self)"
@@ -46,11 +47,11 @@ export function toNotation(event: GameEvent, opts: NotationOptions = {}): string
   const fig = !!opts.figurine;
 
   if (event.kind === "phaseOut") {
-    return `${pieceSym(event.piece, event.color, fig)}${toAlgebraic(event.from)}~${event.duration}`;
+    return `${pieceSym(event.piece, event.color, fig)}${toAlgebraic(event.from)}↑${event.duration}`;
   }
 
   if (event.kind === "phaseIn") {
-    let s = `${pieceSym(event.piece, event.color, fig)}@${toAlgebraic(event.to)}`;
+    let s = `${pieceSym(event.piece, event.color, fig)}↓${toAlgebraic(event.to)}`;
     if (event.capture) s += `x${capturedSym(event.capture.type, event.capture.color, fig)}`;
     if (event.kingCapture) s += "#";
     const selfKing = !!event.kingCapture && event.capture?.color === event.color;
@@ -92,7 +93,7 @@ export function toSeatNotation(
   // A player sees only the OPPONENT's phase-out duration hidden; a spectator sees
   // BOTH sides' durations hidden (event.color never equals "spectator").
   if (event.kind === "phaseOut" && event.color !== viewer) {
-    return `${pieceSym(event.piece, event.color, !!opts.figurine)}${toAlgebraic(event.from)}~?`;
+    return `${pieceSym(event.piece, event.color, !!opts.figurine)}${toAlgebraic(event.from)}↑?`;
   }
   return toNotation(event, opts);
 }

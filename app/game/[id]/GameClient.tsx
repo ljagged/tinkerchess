@@ -135,9 +135,10 @@ function CapturedTray({
 
 /**
  * The move log. Reads the per-seat, fog-filtered notation from the server
- * (opponent phase-out durations show as "~?" until the game ends, then the true
- * log is revealed). Rendered as a classic two-column figurine move list; a turn's
- * move and any end-of-turn phase-ins share that player's cell.
+ * (opponent phase-out durations show as "↑?" until the game ends, then the true
+ * log is revealed). Rendered as a classic two-column algebraic move list (SAN +
+ * the ↑/↓ phase grammar); a turn's move and any end-of-turn phase-ins share that
+ * player's cell.
  */
 function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string | undefined }) {
   const data = useQuery(api.games.getMoveLog, { gameId, seatToken });
@@ -165,7 +166,7 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
     const moveNo = Math.ceil(e.ply / 2);
     const row = rows.get(moveNo) ?? {};
     const prev = e.color === "w" ? row.w : row.b;
-    const text = prev ? `${prev} ${e.fan}` : e.fan;
+    const text = prev ? `${prev} ${e.san}` : e.san;
     if (e.color === "w") row.w = text;
     else row.b = text;
     rows.set(moveNo, row);

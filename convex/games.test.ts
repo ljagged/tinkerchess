@@ -170,8 +170,8 @@ describe("games API", () => {
 
     const ownerLog = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.whiteSeat });
     const oppLog = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.blackSeat });
-    expect(ownerLog!.log[0]!.san).toBe("Qd1~4"); // owner sees the duration
-    expect(oppLog!.log[0]!.san).toBe("Qd1~?"); // opponent does not
+    expect(ownerLog!.log[0]!.san).toBe("Qd1↑4"); // owner sees the duration
+    expect(oppLog!.log[0]!.san).toBe("Qd1↑?"); // opponent does not
     expect(oppLog!.revealed).toBe(false);
     // The raw timer never crosses the boundary.
     expect(JSON.stringify(oppLog)).not.toContain("duration");
@@ -184,7 +184,7 @@ describe("games API", () => {
     });
     const revealed = await t.query(api.games.getMoveLog, { gameId: g.gameId, seatToken: g.blackSeat });
     expect(revealed!.revealed).toBe(true);
-    expect(revealed!.log[0]!.san).toBe("Qd1~4");
+    expect(revealed!.log[0]!.san).toBe("Qd1↑4");
   });
 
   it("chat is players-only: players exchange messages; spectators can't read or post", async () => {
@@ -358,7 +358,7 @@ describe("games API", () => {
     expect(full!.frames).toHaveLength(3); // initial + 2 actions
     // Full reveal: after White's phase-out, White's phased queen is visible.
     expect(full!.frames[1]!.phased.some((p) => p.color === "w" && p.type === "q")).toBe(true);
-    expect(full!.moveLog[0]!.san).toBe("Qd1~4"); // true log, full reveal
+    expect(full!.moveLog[0]!.san).toBe("Qd1↑4"); // true log, full reveal
 
     // Watching from Black's perspective: Black never saw White's phased piece.
     const asBlack = await t.query(api.games.getMatchReplay, { matchId, perspective: "b" });
