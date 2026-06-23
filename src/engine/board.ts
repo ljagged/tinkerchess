@@ -1,6 +1,7 @@
 // Board geometry helpers and the initial position.
 
-import type { GameState, Piece, SquareIndex } from "./types.js";
+import { DEFAULT_RULE_CONFIG } from "./types.js";
+import type { GameState, Piece, RuleConfig, SquareIndex } from "./types.js";
 
 export const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
 
@@ -46,8 +47,16 @@ function emptyBoard(): (Piece | null)[] {
 
 const BACK_RANK: Piece["type"][] = ["r", "n", "b", "q", "k", "b", "n", "r"];
 
-/** The standard chess starting position, wrapped in a fresh GameState. */
-export function initialState(): GameState {
+function cloneConfig(config: RuleConfig): RuleConfig {
+  return { maxPhaseDuration: { ...config.maxPhaseDuration } };
+}
+
+/**
+ * The standard chess starting position, wrapped in a fresh GameState. An optional
+ * RuleConfig sets the game's ruleset (Tier-1 Settings); defaults to
+ * DEFAULT_RULE_CONFIG. The config is cloned so callers can't mutate engine state.
+ */
+export function initialState(config: RuleConfig = DEFAULT_RULE_CONFIG): GameState {
   const board = emptyBoard();
   for (let file = 0; file < 8; file++) {
     board[squareIndex(file, 0)] = { color: "w", type: BACK_RANK[file]! };
@@ -57,6 +66,7 @@ export function initialState(): GameState {
   }
   return {
     board,
+    config: cloneConfig(config),
     turn: "w",
     status: "active",
     wonBySelfCapture: false,
@@ -72,6 +82,9 @@ export function initialState(): GameState {
 export function cloneState(state: GameState): GameState {
   return {
     board: state.board.slice(),
+    // Preserve config faithfully (undefined for legacy states; the engine treats
+    // absence as DEFAULT_RULE_CONFIG).
+    config: state.config ? cloneConfig(state.config) : undefined,
     turn: state.turn,
     status: state.status,
     wonBySelfCapture: state.wonBySelfCapture,

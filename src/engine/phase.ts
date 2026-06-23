@@ -1,33 +1,38 @@
 // Phasing: the hidden-information heart of the variant.
 //
-//   - phaseOut removes a non-pawn piece from the board for `duration` of the
-//     owner's own turns. Duration is bounded per piece type and locked in.
-//   - resolvePhaseIns runs at the START of a color's turn: any of that color's
-//     pieces whose timer has expired reappear on their origin square, removing
-//     whatever occupies it — REGARDLESS OF COLOR, including a king (own king =>
-//     you lose; enemy king => you win).
+//   - phaseOut removes a phase-eligible piece from the board for `duration` of
+//     the owner's own turns. Eligibility and the duration cap come from the
+//     game's RuleConfig (see types.ts), defaulting to DEFAULT_RULE_CONFIG.
+//   - resolvePhaseIns runs at the END of a color's turn (after the turn counter
+//     increments): any of that color's pieces whose timer has expired reappear on
+//     their origin square, removing whatever occupies it — REGARDLESS OF COLOR,
+//     including a king (own king => you lose; enemy king => you win). Resolving at
+//     the END (not the start) lets the owner play the turn with the piece still
+//     out (see game.ts).
 //
 // Neither function flips the turn; game.ts orchestrates turn order.
 
 import { cloneState, pieceAt } from "./board.js";
 import { isAttacked } from "./attacks.js";
-import { MAX_PHASE_DURATION } from "./types.js";
+import { DEFAULT_RULE_CONFIG } from "./types.js";
 import type {
   Color,
   GameState,
   PhaseOut,
   PhasedPiece,
   PieceType,
+  RuleConfig,
   SquareIndex,
 } from "./types.js";
 
-export function isPhaseable(type: PieceType): boolean {
-  return type !== "p";
+/** Whether a piece type may phase under a ruleset (derived from its duration cap). */
+export function isPhaseable(type: PieceType, config: RuleConfig = DEFAULT_RULE_CONFIG): boolean {
+  return config.maxPhaseDuration[type] > 0;
 }
 
-export function maxDuration(type: PieceType): number {
-  if (type === "p") return 0;
-  return MAX_PHASE_DURATION[type];
+/** Max phase-out duration for a piece type under a ruleset (0 = cannot phase). */
+export function maxDuration(type: PieceType, config: RuleConfig = DEFAULT_RULE_CONFIG): number {
+  return config.maxPhaseDuration[type];
 }
 
 export interface PhaseOutCheck {
@@ -38,12 +43,15 @@ export interface PhaseOutCheck {
 /** Validate a phase-out for the side to move without mutating state. */
 export function validatePhaseOut(state: GameState, action: PhaseOut): PhaseOutCheck {
   if (state.status !== "active") return { ok: false, reason: "game is over" };
+  const config = state.config ?? DEFAULT_RULE_CONFIG;
   const piece = pieceAt(state.board, action.from);
   if (!piece) return { ok: false, reason: "no piece on that square" };
   if (piece.color !== state.turn) return { ok: false, reason: "not your piece" };
-  if (!isPhaseable(piece.type)) return { ok: false, reason: "pawns cannot phase" };
+  if (!isPhaseable(piece.type, config)) {
+    return { ok: false, reason: "this piece type cannot phase under the current rules" };
+  }
 
-  const max = maxDuration(piece.type);
+  const max = maxDuration(piece.type, config);
   if (!Number.isInteger(action.duration) || action.duration < 1 || action.duration > max) {
     return { ok: false, reason: `duration must be 1..${max} for this piece` };
   }

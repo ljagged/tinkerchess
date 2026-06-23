@@ -27,6 +27,7 @@ export {
 export {
   createGame,
   applyAction,
+  replay,
   legalMoves,
   viewFor,
   IllegalActionError,

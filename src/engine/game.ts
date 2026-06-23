@@ -25,12 +25,14 @@ import type {
   GameStatus,
   Move,
   Piece,
+  RuleConfig,
   SelfCaptureEvent,
   SquareIndex,
 } from "./types.js";
 
-export function createGame(): GameState {
-  return initialState();
+/** Start a fresh game, optionally with a custom ruleset (Tier-1 Settings). */
+export function createGame(config?: RuleConfig): GameState {
+  return initialState(config);
 }
 
 export class IllegalActionError extends Error {}
@@ -77,6 +79,20 @@ export function applyAction(state: GameState, action: Action): GameState {
 function ownsPiece(state: GameState, sq: SquareIndex, color: Color): boolean {
   const p = pieceAt(state.board, sq);
   return p !== null && p.color === color;
+}
+
+/**
+ * Replay an action sequence from a starting state (default: a fresh game),
+ * returning the final state. The engine is a pure, deterministic reducer with no
+ * randomness, so `replay(actions)` always reproduces the same state — this is the
+ * foundation for game history, per-seat logs, and the post-game reveal: a finished
+ * game is stored as `{ initialState, actions }` and re-derived on demand rather
+ * than as board snapshots. Throws IllegalActionError if any action is illegal.
+ */
+export function replay(actions: Action[], from: GameState = createGame()): GameState {
+  let state = from;
+  for (const action of actions) state = applyAction(state, action);
+  return state;
 }
 
 /** All legal moves for the side to move (for UI highlighting / tests). */

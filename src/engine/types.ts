@@ -54,9 +54,26 @@ export interface SelfCaptureEvent {
   square: SquareIndex;
 }
 
+/**
+ * Per-game rule configuration — the "Tier-1 Settings" surface (which men may
+ * phase, and for how long). A SINGLE source of truth: `maxPhaseDuration[type]`
+ * of 0 means that piece type cannot phase, so phase-eligibility is derived from
+ * the same field as the duration cap (no separate boolean to drift out of sync).
+ * Defaults come from MAX_PHASE_DURATION; a game may override them at setup.
+ */
+export interface RuleConfig {
+  /** Max phase-out duration (in the owner's turns) per piece type. 0 = cannot phase. */
+  maxPhaseDuration: Record<PieceType, number>;
+}
+
 export interface GameState {
   /** 64 squares; holds only IN-PLAY pieces. Phased pieces are absent here. */
   board: (Piece | null)[];
+  /**
+   * The active ruleset. Optional for back-compat with games stored before this
+   * field existed; absence is treated as DEFAULT_RULE_CONFIG everywhere.
+   */
+  config?: RuleConfig;
   /** Whose turn it is to act. */
   turn: Color;
   status: GameStatus;
@@ -110,4 +127,12 @@ export const MAX_PHASE_DURATION: Record<Exclude<PieceType, "p">, number> = {
   b: 2,
   r: 3,
   q: 4,
+};
+
+/**
+ * The default ruleset: pawns cannot phase (duration 0); others use
+ * MAX_PHASE_DURATION. This is the single default that per-game configs override.
+ */
+export const DEFAULT_RULE_CONFIG: RuleConfig = {
+  maxPhaseDuration: { p: 0, ...MAX_PHASE_DURATION },
 };

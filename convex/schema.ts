@@ -30,8 +30,24 @@ export const selfCaptureEventV = v.object({
   square: v.number(),
 });
 
+// Per-game ruleset (Tier-1 Settings). Single source for phase-eligibility +
+// duration caps; 0 means that piece type cannot phase. Optional for back-compat
+// with games stored before configs existed (the engine defaults absence).
+export const ruleConfigV = v.object({
+  maxPhaseDuration: v.object({
+    p: v.number(),
+    n: v.number(),
+    b: v.number(),
+    r: v.number(),
+    q: v.number(),
+    k: v.number(),
+  }),
+});
+
 export const gameStateV = v.object({
   board: v.array(v.union(pieceV, v.null())),
+  // Optional for back-compat; engine.createGame() always sets it on new games.
+  config: v.optional(ruleConfigV),
   turn: colorV,
   status: v.union(v.literal("active"), v.literal("w_won"), v.literal("b_won")),
   // Optional for backward compatibility with games created before these fields
