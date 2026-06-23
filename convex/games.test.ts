@@ -187,6 +187,28 @@ describe("games API", () => {
     expect(revealed!.log[0]!.san).toBe("Qd1~4");
   });
 
+  it("chat is players-only: players exchange messages; spectators can't read or post", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.sendMessage, { gameId: g.gameId, seatToken: g.whiteSeat, text: "hi" });
+    await t.mutation(api.games.sendMessage, { gameId: g.gameId, seatToken: g.blackSeat, text: "hello" });
+
+    const whiteView = await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(whiteView.map((m) => m.text)).toEqual(["hi", "hello"]);
+    expect(whiteView[0]!.mine).toBe(true); // white's own
+    expect(whiteView[1]!.mine).toBe(false); // black's
+
+    // Spectators can neither read nor post (chat is private to the two seats).
+    expect(await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: "bogus" })).toEqual([]);
+    await expect(
+      t.mutation(api.games.sendMessage, { gameId: g.gameId, seatToken: "bogus", text: "spy" }),
+    ).rejects.toThrow();
+
+    // Whitespace-only messages are ignored.
+    await t.mutation(api.games.sendMessage, { gameId: g.gameId, seatToken: g.whiteSeat, text: "   " });
+    expect(await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: g.whiteSeat })).toHaveLength(2);
+  });
+
   it("makeMove is idempotent on a retried requestId (no double-apply)", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

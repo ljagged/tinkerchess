@@ -325,6 +325,43 @@ export const getMatchReplay = query({
   },
 });
 
+// --- chat (players only) ---------------------------------------------------
+
+const MAX_MESSAGE_LEN = 500;
+
+/** Post a chat message. Players only — spectators are rejected. Empty/whitespace
+ * messages are ignored; long ones are capped. */
+export const sendMessage = mutation({
+  args: { gameId: v.id("games"), seatToken: v.string(), text: v.string() },
+  handler: async (ctx, { gameId, seatToken, text }) => {
+    const game = requireGame(await ctx.db.get("games", gameId));
+    const color = viewerFromToken(game, seatToken);
+    if (color === "spectator") throw new Error("only players can chat");
+    const trimmed = text.trim().slice(0, MAX_MESSAGE_LEN);
+    if (!trimmed) return null;
+    await ctx.db.insert("messages", { gameId, color, text: trimmed, createdAt: Date.now() });
+    return null;
+  },
+});
+
+/** The game's chat, oldest first. Players only — spectators get an empty list
+ * (the chat is private to the two seats). `mine` marks the caller's own messages. */
+export const getMessages = query({
+  args: { gameId: v.id("games"), seatToken: v.optional(v.string()) },
+  handler: async (ctx, { gameId, seatToken }) => {
+    const game = await ctx.db.get("games", gameId);
+    if (!game) return [];
+    const viewer = viewerFromToken(game, seatToken);
+    if (viewer === "spectator") return [];
+    const msgs = await ctx.db
+      .query("messages")
+      .withIndex("by_game", (q) => q.eq("gameId", gameId))
+      .collect();
+    msgs.sort((a, b) => a._creationTime - b._creationTime);
+    return msgs.map((m) => ({ id: m._id, color: m.color, text: m.text, mine: m.color === viewer }));
+  },
+});
+
 /** Resolve the acting seat (a player, not a spectator). Turn order is enforced in
  * commit() — AFTER the idempotency check, so a retried submission whose move already
  * applied (turn since flipped) is a graceful no-op rather than a "not your turn" error. */

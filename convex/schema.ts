@@ -177,4 +177,13 @@ export default defineSchema({
       }),
     ),
   }).index("by_game", ["gameId"]),
+
+  // Players-only in-game chat. Private to the two seats — spectators can't read or
+  // post. Tied to the gameId, so it persists across rematches (same two players).
+  messages: defineTable({
+    gameId: v.id("games"),
+    color: colorV,
+    text: v.string(),
+    createdAt: v.number(),
+  }).index("by_game", ["gameId"]),
 });

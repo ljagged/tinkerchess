@@ -341,6 +341,55 @@ function ReplayOverlay({
   );
 }
 
+/** Players-only in-game chat. Live via Convex; private to the two seats. */
+function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string }) {
+  const messages = useQuery(api.games.getMessages, { gameId, seatToken });
+  const send = useMutation(api.games.sendMessage);
+  const [text, setText] = useState("");
+
+  const submit = () => {
+    const t = text.trim();
+    if (!t) return;
+    setText("");
+    send({ gameId, seatToken, text: t }).catch(() => {});
+  };
+
+  return (
+    <div className="panel">
+      <strong>Chat</strong>
+      <div className="chat-log">
+        {messages && messages.length === 0 && (
+          <div className="muted" style={{ fontSize: "0.85rem" }}>No messages yet.</div>
+        )}
+        {(messages ?? []).map((m) => (
+          <div key={m.id} className={m.mine ? "chat-msg mine" : "chat-msg"}>
+            <span className="chat-who">{m.mine ? "You" : "Opponent"}</span>
+            {m.text}
+          </div>
+        ))}
+      </div>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        className="row"
+        style={{ gap: "0.4rem", marginTop: "0.5rem", flexWrap: "nowrap" }}
+      >
+        <input
+          className="chat-input"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Message your opponent…"
+          maxLength={500}
+          aria-label="Chat message"
+        />
+        <button className="primary" type="submit">Send</button>
+      </form>
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -709,6 +758,8 @@ export function GameClient({ gameId }: { gameId: string }) {
             )}
           </div>
         )}
+
+        {isPlayer && seat.seatToken && <Chat gameId={id} seatToken={seat.seatToken} />}
 
         <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
 
