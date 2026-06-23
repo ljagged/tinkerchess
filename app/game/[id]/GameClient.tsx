@@ -957,11 +957,6 @@ export function GameClient({ gameId }: { gameId: string }) {
                 ))}
               </div>
               <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
-                <div
-                  className={`turn-bar ${myTurn ? "mine" : "theirs"}`}
-                  aria-hidden
-                  title={myTurn ? "Your move" : "Opponent's move"}
-                />
                 <Chessboard
                   id="phase-chess"
                   position={position as BoardProps["position"]}

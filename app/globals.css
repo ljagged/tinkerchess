@@ -475,26 +475,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* Turn stripe: a bar on the board's left edge. Bottom half = your move, top
-   half = opponent's. Position (not hue) is the cue — colorblind-safe. */
-.turn-bar {
-  position: absolute;
-  left: -9px;
-  width: 4px;
-  height: calc(50% - 6px);
-  border-radius: 3px;
-  background: var(--text);
-  box-shadow: 0 0 7px rgba(232, 237, 242, 0.55);
-  transition: top 0.2s ease, bottom 0.2s ease;
-  z-index: 3;
-}
-.turn-bar.mine {
-  bottom: 3px;
-}
-.turn-bar.theirs {
-  top: 3px;
-}
-
 /* Drag handle to resize the board (bottom-right corner). */
 .resize-handle {
   position: absolute;
@@ -680,8 +660,5 @@ input:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .ov-warn::after {
     animation: none;
-  }
-  .turn-bar {
-    transition: none;
   }
 }
