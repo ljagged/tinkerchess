@@ -33,6 +33,33 @@ npm run build     # production build
 
 All three must pass. New behavior needs tests — we err on the side of too many.
 
+## Versioning
+
+The version (in `package.json`, shown in the corner of the running app) follows
+**semantic versioning**, bumped by a **test-informed** rule — the kind of test a
+change adds or touches decides the bump:
+
+| Change | Bump | In this repo |
+|---|---|---|
+| Add/extend a **unit** test (a fix or internal change) | **patch** | `src/engine/*.test.ts` |
+| Add a **new functional / acceptance** test (new user-visible behavior) | **minor** | a new test in `convex/*.test.ts` |
+| **Modify** an existing functional / acceptance test (changed behavior) | **major** | an edited test in `convex/*.test.ts` |
+
+Unit tests are the pure engine rules (`src/engine/`); functional/acceptance tests
+drive the real Convex functions end-to-end (`convex/games.test.ts`).
+
+**Pre-release rule.** We are pre-1.0 and stay there until the milestones in
+[`ROADMAP.md`](./ROADMAP.md) are done — **1.0 is the milestone release, not a
+routine bump**. Until then the leading `0` is frozen, so a major-tier change (a
+modified acceptance test) advances the **minor** digit, same as a minor-tier
+change. In practice, pre-1.0:
+
+- unit-test change → bump the patch (`0.x.PATCH`)
+- new **or** modified acceptance test → bump the minor (`0.MINOR.0`)
+
+Bump `package.json` `version` in the same PR as the change. Post-1.0, the three
+tiers map to major / minor / patch directly.
+
 ## Architecture & hard rules
 
 ```
