@@ -1,23 +1,29 @@
-# Phase Chess
+# TinkerChess
 
 A fog-of-war chess variant. Every non-pawn piece can **phase out** — leave the
 board for a chosen number of turns and reappear on its origin square, removing
 whatever sits there (own pieces included). You see your own phased pieces and
 their timers; your opponent doesn't, beyond a one-turn, square-only warning
-before a piece returns. There is no checkmate: **you win by capturing the king.**
+before a piece returns. The win condition is **standard chess: checkmate.**
 
 ## Rules
 
-Standard chess, plus **phasing**:
+Standard chess — **check, checkmate, stalemate, threefold-repetition draws** — plus
+**phasing**:
 
 - On your turn you may **phase out** an eligible piece instead of moving: it leaves
   the board for a chosen number of your turns and reappears on its origin square at
-  the **end** of the last one, removing whatever sits there — **including your own
-  pieces** (a footgun) or a king (a win, or a loss if it's your own).
+  the **end** of the last one, destroying whatever sits there — **including your own
+  pieces** (a footgun). A return onto your **own king** is harmless: the returning
+  piece self-destructs and the king stands.
 - **Fog of war:** you see your own phased pieces and their timers. Your opponent
   sees only a one-turn, square-only warning the turn before a piece returns — never
   the piece, the duration, or anything sooner.
-- **No checkmate:** capturing the king (by a move or a phase-in) wins.
+- **Checkmate wins; no king is ever captured.** One TinkerChess twist: a square
+  showing an enemy's one-turn return **warning ring** counts as a check on a king
+  sitting there — answerable only by moving the king (you can't block or capture a
+  piece that's off the board). A ringed king with nowhere to flee is checkmated the
+  turn before the return would land, so a return never falls on a live king.
 - **Per-game ruleset (Tier-1 settings):** the game creator chooses which piece
   types may phase and each type's maximum duration (0 = can't phase). Defaults:
   knight/bishop 2, rook 3, queen 4, king 1, pawns can't phase. Both players see the
@@ -47,6 +53,9 @@ pairs a shape/border/motion cue with a label (the primary player is colorblind).
 
 Full docs live in [`docs/`](./docs), organized by what you're trying to do:
 
+- **[Rules of the game](./docs/RULES.md)** — the complete, tournament-grade Laws of
+  TinkerChess: phasing, and how it affects check, checkmate, stalemate, castling,
+  and draws.
 - **[Your first game](./docs/tutorial-your-first-game.md)** (tutorial) — play a
   complete game start to finish, including phasing, from zero.
 - **[Engine API](./docs/reference-engine-api.md)** (reference) — the pure rules

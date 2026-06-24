@@ -85,7 +85,9 @@ returns: GameView
 
 Phase an eligible piece out for `duration` of the owner's turns. Same identity,
 turn-order, idempotency, and stale-view guards as `makeMove`. The engine enforces
-phase-eligibility, the duration cap, and the king-not-in-check rule.
+phase-eligibility, the duration cap, and king safety — a phase-out is illegal if it
+would leave the mover's own king in check (e.g. phasing a pinned piece), and the
+king itself can't phase out of check.
 
 ### `newGame`
 
@@ -119,7 +121,7 @@ underlying data changes.
 
 ```ts
 args:    { gameId; seatToken? }
-returns: (GameView & {
+returns: (GameView & {   // GameView includes status ("active"|"w_won"|"b_won"|"draw"), endReason?, inCheck
            phase: "waiting" | "active";
            role: "initiator" | "player" | "spectator";
            joinToken: string | null;     // only for initiator/player
@@ -132,8 +134,11 @@ returns: (GameView & {
 lifecycle. Never leaks the opponent's phased pieces/timers beyond the square-only
 warning. `joinToken` is included **only** for the initiator and active players.
 The active ruleset (`rules`) is public — both players see what's in effect.
-`players` resolves stored names to colors via the white/black token mapping.
-Returns `null` if the game doesn't exist.
+`players` resolves stored names to colors via the white/black token mapping. The
+view's `status` may be `draw` (stalemate or threefold repetition), `endReason`
+says which, and `inCheck` reflects the **caller's own** king (standard attack or an
+enemy return ring; `false` for spectators). Returns `null` if the game doesn't
+exist.
 
 ### `getMoveLog`
 
@@ -166,19 +171,20 @@ across rematches between the same two players.
 
 ```ts
 args:    { gameId; seatToken? }
-returns: Array<{ matchId; endedAt; status; wonBySelfCapture; plies;
+returns: Array<{ matchId; endedAt; status; endReason?; plies;
                  yourColor: "w" | "b" | null }>
 ```
 
 Finished games archived under this game's seats, newest first. Summaries only —
-**never** the seat tokens. `yourColor` lets the caller default a replay to their
-own fog perspective.
+**never** the seat tokens. `status` may be `draw`, with `endReason`
+(`checkmate` / `stalemate` / `repetition`) saying why the game ended. `yourColor`
+lets the caller default a replay to their own fog perspective.
 
 ### `getMatchReplay`
 
 ```ts
 args:    { matchId; perspective: "w" | "b" | "full" }
-returns: { perspective; status; wonBySelfCapture;
+returns: { perspective; status; endReason?;
            frames: Frame[]; moveLog: Array<{ ply; color; san; fan }> } | null
 ```
 
@@ -209,6 +215,18 @@ state is stored as a single `state` object on the `games` row (board 64 + phased
 history lives in its own `moves` table. All persisted shapes are **strictly
 validated** — any new `GameState`/event field must be added to the matching
 validator in `schema.ts` or inserts fail.
+
+The validators mirror the engine's checkmate model:
+
+- `gameStateV.status` is `"active" | "w_won" | "b_won" | "draw"`, with an optional
+  `endReason` (`"checkmate" | "stalemate" | "repetition"`, `endReasonV`) and an
+  optional `history` (`string[]` of position keys for threefold repetition).
+- `gameEventV` mirrors the engine `GameEvent`: the old `kingCapture` flag is gone;
+  a `move` carries `check?` / `checkmate?`, and a `phaseIn` carries `selfCapture?`,
+  `selfDestruct?`, `check?`, and `checkmate?`.
+- The `matches` archive (written by `newGame`) carries the same `status` union and
+  an optional `endReason` for the finished game; `getMatchHistory` / `getMatchReplay`
+  surface that `endReason`.
 
 ## Related
 

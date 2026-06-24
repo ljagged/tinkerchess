@@ -1,6 +1,6 @@
-# Roadmap — Phase Chess
+# Roadmap — TinkerChess
 
-Phase Chess M1 is a polished, deterministic two-player game. The longer arc is a
+TinkerChess M1 is a polished, deterministic two-player game. The longer arc is a
 **mod system**: layered, uploadable rule modules on the standard 8×8 board. The
 engine is built "mod-ready" — config-driven now, declarative rules next, scripted
 mods last — with no rewrites along the way.

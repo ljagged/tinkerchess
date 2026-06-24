@@ -38,6 +38,7 @@ a1 = 0    h1 = 7    a8 = 56    h8 = 63
 | `toAlgebraic` | `(sq: SquareIndex) => string` | Index → `"e4"`. |
 | `pieceAt` | `(board, sq) => Piece \| null` | Safe read; throws on an out-of-range index. |
 | `opponent` | `(color: Color) => Color` | `"w"` ↔ `"b"`. |
+| `positionKey` | `(state: GameState) => string` | The threefold-repetition key: visible board + side-to-move + castling + en-passant. **Phase timers excluded.** Feeds `GameState.history`. |
 
 ## Core types
 
@@ -48,8 +49,12 @@ type Color = "w" | "b";
 type PieceType = "p" | "n" | "b" | "r" | "q" | "k";   // 'p' (pawn) cannot phase
 type SquareIndex = number;                              // 0..63
 interface Piece { color: Color; type: PieceType; }
-type GameStatus = "active" | "w_won" | "b_won";
+type GameStatus = "active" | "w_won" | "b_won" | "draw";
+type EndReason  = "checkmate" | "stalemate" | "repetition";  // why a finished game ended
 ```
+
+A win (`w_won`/`b_won`) is always by `"checkmate"`; a `"draw"` is by `"stalemate"`
+or threefold `"repetition"`. `EndReason` is absent while a game is `active`.
 
 ### `GameState`
 
@@ -61,14 +66,15 @@ object on the Convex `games` row.
 | `board` | `(Piece \| null)[]` (length 64) | **In-play** pieces only. Phased pieces are absent here. |
 | `config?` | `RuleConfig` | Active ruleset. Absence is treated as `DEFAULT_RULE_CONFIG` everywhere (back-compat). |
 | `turn` | `Color` | Side to act. |
-| `status` | `GameStatus` | `active`, or who won. |
-| `wonBySelfCapture` | `boolean` | True when the loser captured their **own** king via a phase-in. |
+| `status` | `GameStatus` | `active`, who won, or `draw`. |
+| `endReason?` | `EndReason` | Why the game ended (`checkmate` / `stalemate` / `repetition`). Absent while active. |
 | `lastEvent` | `SelfCaptureEvent \| null` | Most recent non-terminal self-capture; cleared each turn. |
 | `phased` | `PhasedPiece[]` | Pieces currently off the board (both colors). **Never serialized to a viewer.** |
 | `castling` | `CastlingRights` | `{ wK, wQ, bK, bQ }` booleans. |
 | `enPassant` | `SquareIndex \| null` | The square a pawn skipped over, or null. |
 | `turnsTaken` | `{ w: number; b: number }` | Completed turns per color. Drives phase timers. |
 | `captured` | `{ w: PieceType[]; b: PieceType[] }` | Permanently captured pieces, keyed by the **captured** piece's color. Phased pieces never appear here. |
+| `history?` | `string[]` | Position keys seen so far (one per position reached, incl. the start), for threefold-repetition. The key is **visible board + side-to-move + castling + en-passant only** (`positionKey`) — phase timers are excluded, so phasing can't manufacture a "new" position to dodge a draw. Absence is treated as an empty history (back-compat). |
 
 ### `PhasedPiece`
 
@@ -114,11 +120,17 @@ just the intent) keeps the move log self-describing and replay-stable. See
 type GameEvent =
   | { kind: "move"; color; piece; from; to;
       capture?: { color; type }; enPassant?: true; castle?: "K" | "Q";
-      promotion?: "n"|"b"|"r"|"q"; check?: true; kingCapture?: true }
+      promotion?: "n"|"b"|"r"|"q"; check?: true; checkmate?: true }
   | { kind: "phaseOut"; color; piece; from; duration; returnOn }
   | { kind: "phaseIn"; color; piece; to;
-      capture?: { color; type }; selfCapture?: true; kingCapture?: true };
+      capture?: { color; type }; selfCapture?: true; selfDestruct?: true;
+      check?: true; checkmate?: true };
 ```
+
+`check?` / `checkmate?` are stamped during adjudication (they depend on the final
+post-return board the opponent faces, not just the move). A `phaseIn` carries
+`selfDestruct?` when the return landed on the owner's **own king** — the returning
+piece self-destructs and the king is unaffected (no capture is recorded).
 
 ### `RuleConfig` (Tier-1 Settings)
 
@@ -154,11 +166,13 @@ the derived events. Throws `IllegalActionError` if the action is illegal or the
 game is already over. Turn lifecycle:
 
 1. The side to move applies a move or a phase-out.
-2. If that captured the enemy king, the game ends here.
-3. Otherwise the mover's turn counter increments and any of the **mover's** due
-   pieces phase back in — at the **end** of their turn (which may itself end the
-   game by removing a king).
-4. The turn flips to the opponent.
+2. The mover's turn counter increments and any of the **mover's** due pieces phase
+   back in — at the **end** of their turn (S5 table; this never ends the game and
+   never removes a king — S9).
+3. The turn flips to the opponent, and the position the opponent now faces is
+   **adjudicated** by standard chess rules: **checkmate** (opponent loses),
+   **stalemate** (draw), or **threefold repetition** (draw). No king is ever
+   captured or removed from the board.
 
 ```ts
 const { state, events } = engine.applyActionWithEvents(state, {
@@ -181,8 +195,16 @@ is illegal.
 
 ### `legalMoves(state): Move[]`
 
-All legal **moves** for the side to move (not phase-outs). For UI highlighting and
-tests. Returns `[]` if the game is over.
+All fully-legal, **king-safe** moves for the side to move (not phase-outs). A move
+is included only if it leaves the mover's own king safe (not in check, not on an
+enemy return ring) and is never a king capture. For UI highlighting, adjudication,
+and tests. Returns `[]` if the game is over.
+
+### `legalMovesFrom(state, from): Move[]`
+
+The same king-safe filter, but for a single piece — the legal moves of the piece on
+`from`. `legalMoves` is the union of this over all the side-to-move's pieces.
+Exported from `moves.ts`.
 
 ### `IllegalActionError`
 
@@ -198,6 +220,7 @@ order; these functions never flip the turn.
 |---|---|---|
 | `isPhaseable` | `(type, config?) => boolean` | Derived from the type's duration cap (`> 0`). |
 | `maxDuration` | `(type, config?) => number` | The cap; `0` = cannot phase. |
+| `kingSafe` | `(state, color) => boolean` | The unified king-safety predicate: `color`'s king is **safe** iff it is neither attacked by an enemy in-play piece (standard check) **nor** sitting on a square showing the **enemy's** imminent-return ring (an S5a ringed-king check). A phased-out king is trivially safe. |
 | `validatePhaseOut` | `(state, action: PhaseOut) => { ok; reason? }` | Pure check, no mutation. |
 | `applyPhaseOut` | `(state, action: PhaseOut) => GameState` | Removes the piece, records the timer. Throws if invalid. |
 | `resolvePhaseInsWithEvents` | `(state, color) => { state, events }` | Returns due pieces for `color` at end of turn, plus events. |
@@ -206,8 +229,21 @@ order; these functions never flip the turn.
 | `warningSquaresFor` | `(state, viewer) => SquareIndex[]` | Origin squares of the **opponent's** pieces returning next turn. Square only. |
 
 `validatePhaseOut` rejects: a game that's over, an empty/foreign square, a
-non-phaseable type, a duration outside `1..maxDuration`, and a **king phasing out
-of check**.
+non-phaseable type, a duration outside `1..maxDuration`, a **king phasing out of
+check**, and — per spec **S7** — any phase-out that would leave the **mover's own
+king in check** after the piece is removed (e.g. phasing a pinned piece or one
+blocking an attack on the king). This is the sole own-king-exposure check; a
+phase-**in** can never expose the king (it only ever adds occupancy), so there is
+no analogous rule for returns.
+
+`resolvePhaseInsWithEvents` resolves each due return on its origin square by what
+occupies it (S5 table): empty → returns; enemy non-king → captured, returning piece
+takes the square; **own non-king → own piece destroyed** (the retained footgun),
+returning piece takes the square (`selfCapture`); **own king → the returning piece
+self-destructs and the king is unaffected** (`selfDestruct`, no capture, no loss);
+**enemy king → unreachable** (S5a forces the enemy king off the square or mates it
+the prior turn, so a return never resolves onto a live enemy king — the engine
+throws here as a safety assertion). No king is ever removed by a phase-in (S9).
 
 ## Move mechanics
 
@@ -216,20 +252,28 @@ From [`src/engine/moves.ts`](../src/engine/moves.ts). Lower-level than
 
 | Function | Signature | Notes |
 |---|---|---|
-| `generateMoves` | `(state, from) => Move[]` | Pseudo-legal moves for the piece on `from`. `[]` if empty. |
-| `isLegalMove` | `(state, move) => boolean` | Whether `(from, to, promotion)` is among the generated moves. |
+| `generateMoves` | `(state, from) => Move[]` | **Pseudo-legal** moves for the piece on `from` (not yet filtered for king safety). `[]` if empty. |
+| `legalMovesFrom` | `(state, from) => Move[]` | **Fully-legal**, king-safe moves for the piece on `from`: pseudo-moves filtered to those that don't capture a king and that leave the mover's own king safe (`kingSafe`). |
+| `isLegalMove` | `(state, move) => boolean` | Whether `(from, to, promotion)` is among the **legal** (king-safe) moves. |
 | `applyMove` | `(state, move) => GameState` | Board mechanics only. Does **not** flip the turn or resolve phase timers. |
 
-Phase Chess divergences baked into move generation: capturing the enemy **king**
-is a legal, game-ending move (no checkmate); moves are **not** pruned for leaving
-your own king in check; castling keeps the standard not-in / through / into-check
-constraints.
+TinkerChess plays standard chess for move legality: a **king is never a legal
+capture target** (S9), and moves **are** filtered for king safety
+(`legalMovesFrom` / `kingSafe`) — you may not move into, or leave your king in,
+check. The S5a "ringed-king flight only" rule falls out for free: any non-king move
+that leaves the king on an enemy return ring fails `kingSafe` and is pruned.
+Castling keeps the standard not-in / through / into-check constraints, **extended**
+so an enemy imminent-return ring counts like an attacked square — the king may not
+castle into or through a ringed square.
 
 ## Attack detection
 
-From [`src/engine/attacks.ts`](../src/engine/attacks.ts). Used only for the
-king-can't-phase-out-of-check gate and castling constraints (there's no check rule
-that constrains ordinary moves).
+From [`src/engine/attacks.ts`](../src/engine/attacks.ts). Check now constrains
+ordinary moves — the king-safety filter (`legalMovesFrom` / `kingSafe`) reuses
+these predicates, as do the king-can't-phase-out-of-check gate and castling
+constraints. `kingSafe` combines a standard attack (`isAttacked` on the king's
+square) with the enemy-return-ring term (`warningSquaresFor`), so a ringed king
+registers as in check.
 
 | Function | Signature | Notes |
 |---|---|---|
@@ -250,9 +294,13 @@ type Viewer = Color | "spectator";
 
 The filtered view for a viewer. **Must never** leak an opponent's phased pieces,
 timers, or return squares beyond the allowed square-only warning. `state.phased`
-is never serialized. A `GameView` carries: `board`, `turn`, `status`,
-`wonBySelfCapture`, `lastEvent`, `captured`, `turnsTaken`, `you`, plus:
+is never serialized. A `GameView` carries: `board`, `turn`, `status`, `endReason?`,
+`inCheck`, `lastEvent`, `captured`, `turnsTaken`, `you`, plus:
 
+- `inCheck: boolean` — whether the **viewer's own** king is in check, per the
+  viewer's fog: a standard attack **or** an enemy imminent-return ring on the
+  king's square. Always `false` for spectators (they have no ring visibility).
+  Drives the check indicator.
 - `yourPhased: ViewPhasedPiece[]` — the **viewer's own** phased pieces with
   `turnsRemaining`. Empty for spectators.
 - `warningSquares: SquareIndex[]` — opponent pieces returning next turn, **square
@@ -261,9 +309,10 @@ is never serialized. A `GameView` carries: `board`, `turn`, `status`,
 ### `revealView(state): RevealView`
 
 A fully-revealed view for replaying a **finished** game: exposes **both** sides'
-phased pieces (origin, type, timer). There's no secrecy once a game is over.
-**Never** use this for a live game — it would leak the fog. Live "watch from a
-seat" replay uses `viewFor` instead.
+phased pieces (origin, type, timer). Carries `endReason?` (but no per-viewer
+`inCheck` — reveal has no seat). There's no secrecy once a game is over. **Never**
+use this for a live game — it would leak the fog. Live "watch from a seat" replay
+uses `viewFor` instead.
 
 ## Notation
 
@@ -276,9 +325,11 @@ engine replays from the action/event log, never from notation.
 | `toSeatNotation` | `(event, viewer, opts?) => string` | As the viewer sees it live: the **opponent's** phase-out duration is redacted to `↑?`. |
 
 `NotationOptions = { figurine?: boolean }` switches letters (`Nf3`, `Bf1↑3`) to
-Unicode glyphs (`♘f3`, `♗f1↑3`). Phase Chess SAN extensions: phase-out
+Unicode glyphs (`♘f3`, `♗f1↑3`). TinkerChess SAN extensions: phase-out
 `<piece><from>↑<duration>` (`Bf1↑3`); phase-in `<piece>↓<square>[x<piece>]`
-(`R↓a1xN`); king capture `#`; check `+`; self-capture `(self)`.
+(`R↓a1xN`); **checkmate `#`** (standard win); check `+`; self-capture (own
+non-king footgun) `(self)`; and self-destruct `(lost)` — a return onto your **own
+king**, where the returning piece is lost and the king stands.
 
 ## Related
 

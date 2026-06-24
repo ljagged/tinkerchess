@@ -1,10 +1,11 @@
-# Design System — Phase Chess ("Lab Slate")
+# Design System — TinkerChess ("Lab Slate")
 
 ## Product Context
 - **What this is:** A fog-of-war chess variant. Every non-pawn man can phase out (leave
   the board for N turns and reappear on its origin square, removing whatever sits there).
   You see your own phased pieces and timers; the opponent gets only a one-turn,
-  square-only warning. Win by capturing the king.
+  square-only warning. Standard chess win condition: checkmate (an enemy return
+  ring on a king's square counts as a check).
 - **Who it's for:** The builder's niece and nephew first, then an open-source community.
   Built like a real product.
 - **Space/industry:** Online chess platforms. Peers: lichess (clean, fast, open-source),

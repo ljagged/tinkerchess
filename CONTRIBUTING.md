@@ -1,6 +1,6 @@
-# Contributing to Phase Chess
+# Contributing to TinkerChess
 
-Thanks for your interest! Phase Chess is a fog-of-war chess variant built to be a
+Thanks for your interest! TinkerChess is a fog-of-war chess variant built to be a
 real, polished, open-source product. This guide covers setup and the conventions
 that keep the codebase coherent.
 

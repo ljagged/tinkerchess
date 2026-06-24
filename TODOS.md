@@ -1,4 +1,4 @@
-# TODOS — Phase Chess
+# TODOS — TinkerChess
 
 Deferred work, with enough context to pick up cold. Distilled from the M1 design
 review (2026-06-22). The durable product/engine roadmap lives in [`ROADMAP.md`](./ROADMAP.md).

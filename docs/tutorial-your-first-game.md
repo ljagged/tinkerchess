@@ -1,6 +1,6 @@
-# Tutorial: Your first game of Phase Chess
+# Tutorial: Your first game of TinkerChess
 
-By the end of this tutorial you'll have played a complete game of Phase Chess
+By the end of this tutorial you'll have played a complete game of TinkerChess
 against a friend: created a game, shared a join code, made moves, **phased a
 piece out** and watched it reappear, and won by capturing a king. You'll come
 away understanding the one mechanic that makes this not-quite-chess — phasing —
@@ -16,7 +16,7 @@ This is a learning walk-through. For the exact rules see the
   [Run it locally](../README.md#commands) — you'll want `npx convex dev` and
   `npm run dev` both running, then open `http://localhost:3000`.
 - A second player (a second browser, an incognito window, or a friend on another
-  machine). Phase Chess is two-player; there's no single-device pass-and-play yet.
+  machine). TinkerChess is two-player; there's no single-device pass-and-play yet.
 
 You don't need to know much chess. If you can move the pieces, you can follow
 along — phasing is the only new idea.
@@ -115,24 +115,31 @@ phased piece reappears on its origin square.
   nowhere.
 - If **one of your own pieces** drifted onto that square, you destroy your own
   piece. This is the footgun the variant is built around: plan your return.
+- If your **own king** is on that square, nothing bad happens to it — the
+  returning piece self-destructs and the king stands. Kings are immune to your
+  own returns; you just waste the phased piece.
 
 The turn before a piece returns, your opponent gets exactly one hint: the origin
 square **pulses with an orange ring**. Square only — never the piece, never the
 timer, and never any sooner. That one-turn warning is the entire window they get.
 
-## Step 6: Win by capturing the king
+## Step 6: Win by checkmate
 
-There is **no checkmate** in Phase Chess. You win by **capturing the enemy king**
-outright — either with a normal move onto the king's square, or by phasing a
-piece back in onto it.
+TinkerChess uses the **standard chess** win condition: **checkmate**. Put the
+enemy king in check with no legal escape and you win. Stalemate (no legal move,
+not in check) is a draw, as is a threefold repetition of the position. No king is
+ever captured.
 
-That second path is the dramatic one: phase a rook out from `a1`, maneuver the
-enemy king onto `a1` over the next couple of turns, and your rook returns *onto
-the king* to win. The opponent only saw an orange ring on `a1` the turn before.
+Phasing adds one twist to check. That orange return ring counts as a **check** on
+an enemy king sitting on that square: the return is about to land there, so the
+king must move off it. It can't be answered by blocking or by capturing the
+phased piece (it's off the board) — only by **king flight**. So the dramatic line
+is this: phase a rook out from `a1`, force the enemy king onto `a1`, and the ring
+appears — if the king has nowhere to flee, that's **checkmate**, decided the turn
+before your rook would even return.
 
-When a king is captured, both boards show a **game-over banner** naming the
-winner. If you capture your **own** king by a careless phase-in, you lose — and
-the banner says so.
+When a king is checkmated, both boards show a **game-over banner** naming the
+winner (or "Draw by stalemate" / "Draw by repetition").
 
 Click **New game** on the banner to play again. The same two seats and join code
 carry over, sides are re-randomized, the previous game is archived (you can
@@ -140,18 +147,20 @@ replay it), and the ruleset stays the same.
 
 ## What you built
 
-You played a full game and used the mechanic that defines Phase Chess:
+You played a full game and used the mechanic that defines TinkerChess:
 
 - **Phasing out** — hiding a piece for a few of your turns, visible only to you.
 - **Phasing in** — its reappearance on the origin square, capturing whatever's
   there (theirs, or yours).
 - **Fog of war** — your opponent's piece is information you don't have, and yours
   is information they don't have, beyond a one-turn square warning.
-- **King capture** — the win condition that replaces checkmate.
+- **Checkmate** — the standard win condition, with the return ring acting as a
+  flight-only check.
 
 ### Where to next
 
-- **The exact rules and edge cases:** [README → Rules](../README.md#rules).
+- **The exact rules and edge cases:** [Rules of the game](./RULES.md) — the full,
+  tournament-grade Laws.
 - **Why the fog works the way it does** (and what your opponent can and can't
   ever learn): [Fog of war](./explanation-fog-of-war.md).
 - **Replaying a finished game** from either side's fog, or fully revealed: open a

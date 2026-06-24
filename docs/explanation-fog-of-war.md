@@ -1,6 +1,6 @@
 # Explanation: The fog-of-war model
 
-Phase Chess is a hidden-information game. When you phase a piece out, your
+TinkerChess is a hidden-information game. When you phase a piece out, your
 opponent must not learn where it went or when it returns — beyond a single,
 deliberate one-turn warning. This document explains how that secrecy is enforced,
 why it lives where it does, and what the boundary deliberately reveals.
@@ -85,6 +85,16 @@ purpose:
 Everything else about the opponent's phased piece — the exact timer, whether
 there even *is* a piece versus a bluff you're imagining — stays hidden until it
 returns.
+
+Under the checkmate ruleset that one-turn ring does one more thing: an **enemy**
+ring on your king's square is treated as a **check** (spec S5a), resolvable only by
+king flight — you can't block a return or capture an off-board attacker. This adds
+no new leak: it's computed from the very same per-viewer `warningSquares` fog data
+the UI already shows, so it's correctly time-aligned (visible exactly one turn
+ahead) and never exposes a not-yet-imminent return. **Ring ownership matters** —
+only the *enemy's* ring is a check; your *own* ring on your king's square is not (a
+return there self-destructs the returning piece, not the king). Spectators have no
+ring visibility, so they never see this check.
 
 ## Where the boundary is enforced
 

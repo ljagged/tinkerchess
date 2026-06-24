@@ -1,6 +1,6 @@
 # Explanation: Determinism, derived events, and replay
 
-Phase Chess stores a finished game as a **ruleset plus an ordered list of
+TinkerChess stores a finished game as a **ruleset plus an ordered list of
 actions** — not as board snapshots. The whole game, including each player's fog at
 every step, is re-derived on demand by replaying those actions through the engine.
 This document explains why that works, what makes it safe, and what it buys.
@@ -49,6 +49,20 @@ stored:   config  +  [action, action, action, …]
 
 An archived match is therefore **fully self-describing**: ruleset + ordered
 action/event log replays the whole game. No board snapshots needed.
+
+### Repetition history is part of the deterministic state
+
+The win/draw outcomes are standard chess — **checkmate** (a win), **stalemate** and
+**threefold repetition** (draws); no king is ever captured. Detecting threefold
+repetition needs memory of past positions, so `GameState` carries a `history` of
+**position keys** (one per position reached). The key deliberately includes only
+the **visible board, side-to-move, castling rights, and en-passant target** — phase
+timers are *excluded*. That exclusion is a rule, not an oversight: if timers were in
+the key, a player could phase a piece in and out to manufacture a "new" position and
+dodge a draw. Because `history` is derived purely from the replayed actions (the key
+is a pure function of state), it stays fully deterministic and replay-stable — the
+same action list reproduces the same `history`, and therefore the same repetition
+draw, byte for byte.
 
 ## Derived events: intent vs. what happened
 
