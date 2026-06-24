@@ -3,15 +3,7 @@
 // games so multiple test files can exercise the engine over a wide state space
 // without duplicating the generator.
 
-import {
-  applyAction,
-  createGame,
-  legalMoves,
-  maxDuration,
-  isPhaseable,
-  pieceAt,
-  validatePhaseOut,
-} from "./index.js";
+import { applyAction, createGame, legalMoves, legalPhaseOuts } from "./index.js";
 import type { Action, GameState, RuleConfig } from "./index.js";
 
 /** Tiny seeded PRNG (mulberry32) — reproducible so a failing seed can be replayed. */
@@ -26,19 +18,15 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/** Every legal action (moves + phase-outs) for the side to move under its ruleset. */
+/**
+ * Every legal action (moves + phase-outs) for the side to move under its ruleset.
+ * Phase-out enumeration lives in the engine (`legalPhaseOuts`); this helper just
+ * unions it with `legalMoves` so the single source of truth stays in one place.
+ */
 export function legalActions(state: GameState): Action[] {
   const actions: Action[] = [];
   for (const move of legalMoves(state)) actions.push({ kind: "move", move });
-  for (let sq = 0; sq < 64; sq++) {
-    const p = pieceAt(state.board, sq);
-    if (!p || p.color !== state.turn || !isPhaseable(p.type, state.config)) continue;
-    for (let d = 1; d <= maxDuration(p.type, state.config); d++) {
-      if (validatePhaseOut(state, { from: sq, duration: d }).ok) {
-        actions.push({ kind: "phaseOut", phaseOut: { from: sq, duration: d } });
-      }
-    }
-  }
+  for (const phaseOut of legalPhaseOuts(state)) actions.push({ kind: "phaseOut", phaseOut });
   return actions;
 }
 

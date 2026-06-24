@@ -21,6 +21,7 @@ export {
   maxDuration,
   kingSafe,
   validatePhaseOut,
+  legalPhaseOuts,
   applyPhaseOut,
   resolvePhaseIns,
   resolvePhaseInsWithEvents,
