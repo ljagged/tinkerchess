@@ -499,8 +499,14 @@ button:disabled {
   .rail-left {
     order: 3;
   }
+  /* Stacked layout: float the tool icons (rules / share) to the TOP of the screen,
+     right-aligned, instead of stranding them between the move list and the chat. */
   .rail-head {
-    order: 4;
+    order: -1;
+  }
+  .rail-head .rail-tools {
+    width: 100%;
+    justify-content: flex-end;
   }
   .rail-right {
     order: 5;
@@ -557,6 +563,80 @@ button:disabled {
   font-weight: 700;
   margin-left: 0.35rem;
   white-space: nowrap;
+}
+
+/* Chess clock chip, anchored to the right of a player row (DESIGN.md: monospace,
+   active side emphasized). margin-left:auto pushes it to the board's right edge. */
+.clock {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  min-width: 4.4em;
+  text-align: center;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+/* The running side is emphasized: brighter text + accent border/fill + weight. */
+.clock.active {
+  color: var(--text);
+  font-weight: 700;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+}
+/* Low time pairs the danger color with a heavier, solid border + bold (a shape
+   cue, never color alone — DESIGN.md). Tenths are shown by the formatter. */
+.clock.low {
+  color: var(--danger);
+  border-color: var(--danger);
+  border-width: 2px;
+  font-weight: 700;
+}
+.clock.active.low {
+  background: color-mix(in srgb, var(--danger) 16%, var(--panel-2));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.clock.flagged {
+  opacity: 0.85;
+  text-decoration: line-through;
+}
+
+/* Time-control picker (lichess-style preset grid). Selected chip = border + fill +
+   weight + aria-checked (a shape/label cue, not color alone). */
+.tc-picker {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.2rem;
+}
+.tc-group {
+  display: grid;
+  gap: 0.3rem;
+}
+.tc-group-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.tc-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.tc-option {
+  font-family: var(--mono);
+  padding: 0.4rem 0.7rem;
+}
+.tc-option.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
 }
 
 /* Drag handle to resize the board (bottom-right corner). */

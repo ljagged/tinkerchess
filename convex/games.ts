@@ -4,6 +4,14 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { ConvexError, v } from "convex/values";
 import { pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
+import {
+  applyMoveToClock,
+  isExpired,
+  newClock,
+  resolveTimeControlId,
+  startClock,
+  type Clock,
+} from "../src/timecontrol.js";
 
 const PIECE_TYPES = ["p", "n", "b", "r", "q", "k"] as const;
 const MAX_CONFIG_DURATION = 8;
@@ -122,12 +130,21 @@ function engineState(game: Doc<"games">): engine.GameState {
 
 // --- public API ------------------------------------------------------------
 
-/** Create a game. The creator gets a join token to share and their seat token. */
+/** Create a game. The creator gets a join token to share and their seat token. The
+ * time control (resolved server-side from its id) is set now but only STARTS
+ * running once the opponent joins. */
 export const createGame = mutation({
-  args: { config: v.optional(ruleConfigV), name: v.optional(v.string()) },
-  handler: async (ctx, { config, name }) => {
+  args: {
+    config: v.optional(ruleConfigV),
+    name: v.optional(v.string()),
+    timeControl: v.optional(v.string()),
+  },
+  handler: async (ctx, { config, name, timeControl }) => {
     const joinToken = await uniqueJoinToken(ctx);
     const initiatorToken = crypto.randomUUID();
+    // Absent timeControl ⇒ untimed (back-compat). The UI picker always sends an
+    // explicit id (defaulting to the rapid preset), so games made via the app are timed.
+    const clock = timeControl !== undefined ? newClock(resolveTimeControlId(timeControl)) : undefined;
     const gameId = await ctx.db.insert("games", {
       state: engine.createGame(sanitizeConfig(config)),
       joinToken,
@@ -136,6 +153,7 @@ export const createGame = mutation({
       whiteToken: null,
       blackToken: null,
       initiatorName: sanitizeName(name),
+      ...(clock ? { clock } : {}),
       createdAt: Date.now(),
     });
     return { gameId, joinToken, seatToken: initiatorToken };
@@ -165,6 +183,8 @@ export const joinByToken = mutation({
         whiteToken: initiatorIsWhite ? game.initiatorToken : opponentToken,
         blackToken: initiatorIsWhite ? opponentToken : game.initiatorToken,
         opponentName: sanitizeName(name),
+        // The game is now active — white moves first, so white's clock starts.
+        ...(game.clock ? { clock: startClock(game.clock, Date.now()) } : {}),
       });
       return { gameId: game._id, role: "player" as const, seatToken: opponentToken };
     }
@@ -194,11 +214,20 @@ export const getGameView = query({
         ? "spectator"
         : "player";
 
-    const base = engine.viewFor(engineState(game), viewer);
+    const s = engineState(game);
+    const base = engine.viewFor(s, viewer);
     const showToken = role === "initiator" || role === "player";
     // The active ruleset (Tier-1 Settings) is public — both players see what's in
     // effect, and the joiner sees the rules they joined.
-    const rules = (engineState(game).config ?? engine.DEFAULT_RULE_CONFIG).maxPhaseDuration;
+    const rules = (s.config ?? engine.DEFAULT_RULE_CONFIG).maxPhaseDuration;
+    // Legal-move targets for highlighting (DESIGN.md dots/rings). Only the side to
+    // move gets them, and only their OWN moves — computed on a board where phased
+    // pieces are off-board for everyone, so this leaks nothing beyond the
+    // square-only warnings the viewer already receives.
+    const legalMoves =
+      viewer !== "spectator" && s.status === "active" && s.turn === viewer
+        ? legalMovesByFrom(s)
+        : null;
     return {
       ...base,
       phase: waiting ? ("waiting" as const) : ("active" as const),
@@ -206,9 +235,23 @@ export const getGameView = query({
       joinToken: showToken ? game.joinToken : null,
       rules,
       players: playerNames(game),
+      // The clock is public (both players + spectators see both times), or null
+      // for an untimed game. `serverNow` lets the client cancel clock skew.
+      clock: game.clock ?? null,
+      serverNow: Date.now(),
+      legalMoves,
     };
   },
 });
+
+/** Group the side-to-move's fully-legal moves by origin square (for UI highlights). */
+function legalMovesByFrom(state: engine.GameState): Record<number, number[]> {
+  const out: Record<number, number[]> = {};
+  for (const m of engine.legalMoves(state)) {
+    (out[m.from] ??= []).push(m.to);
+  }
+  return out;
+}
 
 /**
  * The per-seat move log. Renders each derived event to notation (plain + figurine)
@@ -397,6 +440,33 @@ async function actingSeat(
 }
 
 /**
+ * End an active game on time: the side whose clock ran out (`flagged`) loses, the
+ * other wins. Pauses the clock, stamps the `timeout` end reason, persists, and
+ * returns the fog view for `viewer`. (v1 always awards the win — no
+ * insufficient-material draw; in a phase variant "insufficient material" is murky
+ * because a phased piece can return. Revisit later.)
+ */
+async function endByTimeout(
+  ctx: MutationCtx,
+  game: Doc<"games">,
+  flagged: "w" | "b",
+  viewer: Viewer,
+) {
+  const winner: "w" | "b" = flagged === "w" ? "b" : "w";
+  const next: engine.GameState = {
+    ...engineState(game),
+    status: winner === "w" ? "w_won" : "b_won",
+    endReason: "timeout",
+  };
+  // Zero the flagged side's clock (it ran out) and pause the running period.
+  const clock: Clock | undefined = game.clock
+    ? { ...game.clock, remaining: { ...game.clock.remaining, [flagged]: 0 }, runningSince: null }
+    : undefined;
+  await ctx.db.patch("games", game._id, { state: next, ...(clock ? { clock } : {}) });
+  return engine.viewFor(next, viewer);
+}
+
+/**
  * Apply an action, persist the new state, append to the move log, return the
  * actor's view. Two robustness guards:
  *   - idempotency: a retried submission with the same requestId returns the current
@@ -430,6 +500,15 @@ async function commit(
     throw new ConvexError("Your board is out of sync — it'll refresh, then try again.");
   }
 
+  // One server timestamp for both the flag check and the clock switch, so they can
+  // never disagree within this mutation.
+  const now = Date.now();
+  // Flag-on-press: if the mover's clock already ran out, they've lost on time and
+  // the submitted action does NOT apply (the flag fell before the press landed).
+  if (game.clock && isExpired(game.clock, color, now)) {
+    return endByTimeout(ctx, game, color, color);
+  }
+
   // The engine throws on an illegal action. Surface it as a readable ConvexError
   // (a plain Error reaches the client as a bare "Server Error"). Until the client
   // highlights legal moves, this is the only feedback for, e.g., a move that
@@ -449,7 +528,12 @@ async function commit(
     throw e;
   }
   const { state: next, events } = applied;
-  await ctx.db.patch("games", game._id, { state: next });
+  // Switch the clock: deduct the mover's elapsed, add their increment, and start
+  // the opponent's clock — or pause it if this move ended the game.
+  const clockPatch = game.clock
+    ? { clock: applyMoveToClock(game.clock, color, now, next.status !== "active").clock }
+    : {};
+  await ctx.db.patch("games", game._id, { state: next, ...clockPatch });
   await ctx.db.insert("moves", {
     gameId: game._id,
     ply: next.turnsTaken.w + next.turnsTaken.b,
@@ -508,14 +592,37 @@ export const phaseOut = mutation({
 });
 
 /**
- * Reset a game for a rematch, keeping the same seats and join token but
- * RE-RANDOMIZING sides. Either player may trigger it. The finished game is first
- * archived as an immutable match record (history is preserved, not destroyed), and
- * the rematch carries the same ruleset forward (no silent reset to defaults).
+ * End the game if the side to move has run out of time. Any player may call it —
+ * typically the OPPONENT's client when it watches the running clock hit zero. The
+ * server re-checks against its own clock, so a premature or wrong claim is a
+ * graceful no-op that just returns the current view.
  */
-export const newGame = mutation({
+export const flagTimeout = mutation({
   args: { gameId: v.id("games"), seatToken: v.string() },
   handler: async (ctx, { gameId, seatToken }) => {
+    const game = requireGame(await ctx.db.get("games", gameId));
+    const viewer = viewerFromToken(game, seatToken);
+    if (viewer === "spectator") throw new ConvexError("You are not a player in this game.");
+    if (!game.clock || game.state.status !== "active") {
+      return engine.viewFor(engineState(game), viewer);
+    }
+    if (!isExpired(game.clock, game.state.turn, Date.now())) {
+      return engine.viewFor(engineState(game), viewer); // not actually out of time
+    }
+    return endByTimeout(ctx, game, game.state.turn, viewer);
+  },
+});
+
+/**
+ * Reset a game for a rematch, keeping the same seats and join token but
+ * RE-RANDOMIZING sides. Either player may trigger it. The finished game is first
+ * archived as an immutable match record (history is preserved, not destroyed). The
+ * rematch carries the same ruleset forward; the time control is the one chosen now
+ * (the "New game" picker), defaulting to carrying the previous game's forward.
+ */
+export const newGame = mutation({
+  args: { gameId: v.id("games"), seatToken: v.string(), timeControl: v.optional(v.string()) },
+  handler: async (ctx, { gameId, seatToken, timeControl }) => {
     const game = requireGame(await ctx.db.get("games", gameId));
     if (viewerFromToken(game, seatToken) === "spectator") {
       throw new ConvexError("Only a player can start a new game.");
@@ -546,12 +653,24 @@ export const newGame = mutation({
       });
     }
 
+    // The rematch is immediately active (both seats are still filled), so the new
+    // clock starts running right away (white to move). An explicit timeControl
+    // overrides; otherwise carry the previous game's preset forward (absent = untimed).
+    const presetId =
+      timeControl !== undefined
+        ? resolveTimeControlId(timeControl)
+        : (game.clock?.preset ?? "untimed");
+    const fresh = newClock(presetId);
+    const clock = fresh ? startClock(fresh, Date.now()) : undefined;
+
     const initiatorIsWhite = Math.random() < 0.5;
     await ctx.db.patch("games", gameId, {
       // Carry the ruleset forward — a rematch keeps the same Tier-1 settings.
       state: engine.createGame(game.state.config),
       whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
       blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
+      // `undefined` clears any prior clock so an untimed rematch is truly untimed.
+      clock,
     });
     // Now safe to clear the live move log (already archived above).
     for (const m of moves) await ctx.db.delete("moves", m._id);

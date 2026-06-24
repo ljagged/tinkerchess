@@ -413,3 +413,187 @@ describe("games API", () => {
     expect(a!.board[parseSquare("e4")]).toBeNull();
   });
 });
+
+describe("chess clock", () => {
+  it("createGame stores a clock from the time-control id; join starts white's clock", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+
+    // While waiting, the clock is seeded but not running.
+    const waiting = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(waiting!.clock).toMatchObject({
+      preset: "blitz_3_2",
+      remaining: { w: 180_000, b: 180_000 },
+      runningSince: null,
+    });
+
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const active = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(active!.clock!.runningSince).not.toBeNull(); // white's clock now runs
+  });
+
+  it("an untimed game has no clock", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    const view = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(view!.clock).toBeNull();
+  });
+
+  it("a move deducts the mover's elapsed and adds the increment, then switches sides", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" }); // 180s + 2s
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const initView = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    const whiteSeat = initView!.you === "w" ? init.seatToken : opp.seatToken!;
+
+    await t.mutation(api.games.makeMove, {
+      gameId: init.gameId,
+      seatToken: whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+
+    const after = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: whiteSeat,
+    });
+    // White spent only a few ms, so remaining ≈ 180s + 2s increment (just under).
+    expect(after!.clock!.remaining.w).toBeGreaterThan(180_000);
+    expect(after!.clock!.remaining.w).toBeLessThanOrEqual(182_000);
+    expect(after!.clock!.remaining.b).toBe(180_000); // black untouched, now running
+  });
+
+  it("flagTimeout ends the game for the opponent when the side to move is out of time", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const initView = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    const whiteSeat = initView!.you === "w" ? init.seatToken : opp.seatToken!;
+    const blackSeat = whiteSeat === init.seatToken ? opp.seatToken! : init.seatToken;
+
+    // Backdate white's running clock so its full time has elapsed.
+    await t.run(async (ctx) => {
+      const game = (await ctx.db.get("games", init.gameId))!;
+      await ctx.db.patch("games", init.gameId, {
+        clock: { ...game.clock!, runningSince: Date.now() - 200_000 },
+      });
+    });
+
+    // Black (the opponent) claims the flag.
+    await t.mutation(api.games.flagTimeout, { gameId: init.gameId, seatToken: blackSeat });
+
+    const view = await t.query(api.games.getGameView, { gameId: init.gameId, seatToken: blackSeat });
+    expect(view!.status).toBe("b_won"); // white flagged -> black wins
+    expect(view!.endReason).toBe("timeout");
+    expect(view!.clock!.remaining.w).toBe(0); // flagged clock reads zero
+    expect(view!.clock!.runningSince).toBeNull(); // clock paused
+  });
+
+  it("a timed game's untimed rematch clears the clock (patch undefined deletes it)", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const iv = await t.query(api.games.getGameView, { gameId: init.gameId, seatToken: init.seatToken });
+    const whiteSeat = iv!.you === "w" ? init.seatToken : opp.seatToken!;
+    await t.mutation(api.games.makeMove, {
+      gameId: init.gameId,
+      seatToken: whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+    await t.mutation(api.games.newGame, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+      timeControl: "untimed",
+    });
+    const after = await t.query(api.games.getGameView, { gameId: init.gameId, seatToken: init.seatToken });
+    expect(after!.clock).toBeNull();
+  });
+
+  it("a rematch carries the prior preset forward when timeControl is omitted", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    await t.mutation(api.games.newGame, { gameId: init.gameId, seatToken: init.seatToken });
+    const after = await t.query(api.games.getGameView, { gameId: init.gameId, seatToken: init.seatToken });
+    expect(after!.clock?.preset).toBe("blitz_3_2");
+    expect(after!.clock?.runningSince).not.toBeNull(); // rematch is immediately active
+  });
+
+  it("flagTimeout is a no-op when the clock has not actually expired", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "rapid_10_5" });
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    await t.mutation(api.games.flagTimeout, { gameId: init.gameId, seatToken: opp.seatToken! });
+    const view = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: opp.seatToken!,
+    });
+    expect(view!.status).toBe("active");
+  });
+
+  it("submitting a move after your own flag has fallen loses on time (move not applied)", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    const opp = await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const initView = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    const whiteSeat = initView!.you === "w" ? init.seatToken : opp.seatToken!;
+
+    await t.run(async (ctx) => {
+      const game = (await ctx.db.get("games", init.gameId))!;
+      await ctx.db.patch("games", init.gameId, {
+        clock: { ...game.clock!, runningSince: Date.now() - 200_000 },
+      });
+    });
+
+    await t.mutation(api.games.makeMove, {
+      gameId: init.gameId,
+      seatToken: whiteSeat,
+      from: parseSquare("e2"),
+      to: parseSquare("e4"),
+    });
+
+    const view = await t.query(api.games.getGameView, { gameId: init.gameId, seatToken: whiteSeat });
+    expect(view!.status).toBe("b_won");
+    expect(view!.endReason).toBe("timeout");
+    expect(view!.board[parseSquare("e4")]).toBeNull(); // the move did not apply
+  });
+});
+
+describe("legal-move highlights", () => {
+  it("getGameView exposes legalMoves only to the side to move", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+
+    const whiteView = await t.query(api.games.getGameView, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+    });
+    expect(whiteView!.legalMoves).not.toBeNull();
+    expect(whiteView!.legalMoves![parseSquare("e2")]).toEqual(
+      expect.arrayContaining([parseSquare("e3"), parseSquare("e4")]),
+    );
+
+    // Not black's turn -> no legal-move hints leak to them.
+    const blackView = await t.query(api.games.getGameView, {
+      gameId: g.gameId,
+      seatToken: g.blackSeat,
+    });
+    expect(blackView!.legalMoves).toBeNull();
+  });
+});
