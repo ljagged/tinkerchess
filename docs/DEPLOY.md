@@ -28,35 +28,54 @@ You do **not** run `convex deploy` by hand for this setup; Vercel runs it for yo
 
 1. **Import** the GitHub repo `ljagged/tinkerchess` into a new Vercel project.
    Vercel auto-detects Next.js.
-2. **Build command:** already handled. The repo's `vercel.json` sets it to
-   `npx convex deploy --cmd 'npm run build'`. This deploys your Convex functions to
-   production **and** injects the correct `NEXT_PUBLIC_CONVEX_URL` into the Next
-   build automatically. (If you ever override the build command in the Vercel UI,
-   the UI override wins over `vercel.json`, so leave the UI override off.)
-3. **Environment variable:** Settings → Environment Variables → Add:
-   - Name: `CONVEX_DEPLOY_KEY` (the name is fixed; `convex deploy` looks for exactly
-     this).
-   - Value: the production deploy key from step 1.
-   - Environment: **Production** (add **Preview** too if you want PR preview
-     deploys to push to Convex as well).
-   - Do **not** set `NEXT_PUBLIC_CONVEX_URL` yourself; the build command derives and
-     injects it. Setting it by hand can fight the wrapper.
+2. **Build command:** already handled. The repo's `vercel.json` sets it to an
+   environment-aware command:
+   ```sh
+   if [ "$VERCEL_ENV" = production ]; then npx convex deploy --cmd 'npm run build'; else npm run build; fi
+   ```
+   On **production** (`main`) it deploys your Convex functions to production **and**
+   injects the correct `NEXT_PUBLIC_CONVEX_URL` into the Next build. On **preview**
+   (PRs) it just runs `npm run build` — no Convex deploy — so previews don't need a
+   deploy key (see "Preview deployments" below). (If you override the build command
+   in the Vercel UI, the UI override wins over `vercel.json`, so leave it off.)
+3. **Environment variables:** Settings → Environment Variables → Add:
+   - `CONVEX_DEPLOY_KEY` = the production deploy key from step 1. Scope it to
+     **Production only** — the name is fixed (`convex deploy` looks for exactly
+     this), and only the production build runs `convex deploy`.
+   - Do **not** set `NEXT_PUBLIC_CONVEX_URL` for **Production**; the production build
+     command derives and injects it. (You *do* set it for Preview — see below.)
 4. **Node version:** the repo pins Node 22 via `.nvmrc` and the `engines.node`
    field in `package.json`; Vercel honors these. The Convex CLI requires Node ≥ 22.
 
+### Preview deployments (PRs)
+
+Per-PR preview deployments build against your **dev** Convex backend, which is fine
+for eyeballing UI changes. Set one **Preview**-scoped env var:
+
+- `NEXT_PUBLIC_CONVEX_URL` = your dev deployment URL (e.g.
+  `https://<your-dev>.convex.cloud`), Environment: **Preview** only.
+
+That's all previews need — the preview build runs plain `npm run build` and reads
+this URL. Do **not** set `CONVEX_DEPLOY_KEY` for Preview (previews don't deploy
+Convex). Caveat: a PR that changes Convex schema/functions won't see those changes
+in its preview until they're deployed to dev (`npx convex dev`); the preview shares
+the dev backend. For full per-PR isolation, use Convex preview deployments instead
+(a Preview-scoped `CONVEX_DEPLOY_KEY` generated as a *preview* key) — more setup
+than a playtest needs.
+
 ## 3. Deploy and verify
 
-Trigger a deploy (push to `main`, or Vercel → Deployments → Redeploy). A correct
-build log shows, in order:
+Trigger a **production** deploy (push to `main`, or Vercel → Deployments →
+Redeploy). A correct production build log shows, in order:
 
-1. `Running "npx convex deploy ..."`
-2. `Deployed Convex functions to https://<your-prod>.convex.cloud`
-3. *then* `next build` / `Creating an optimized production build`
+1. `Deployed Convex functions to https://<your-prod>.convex.cloud`
+2. *then* `next build` / `Creating an optimized production build`
 
-If you instead see `Running "npm run build"` with no Convex step, the build command
-is not in effect, and the build fails at prerender with
-`No address provided to ConvexReactClient` (the URL was never injected). Confirm
-`vercel.json` is present and no conflicting UI build-command override is set.
+If a **production** build instead runs `npm run build` with no Convex step and
+fails at prerender with `No address provided to ConvexReactClient`, the build
+command isn't in effect — confirm `vercel.json` is present and no conflicting UI
+build-command override is set. (On a **preview** build, `npm run build` with no
+Convex deploy is expected; previews read the Preview-scoped `NEXT_PUBLIC_CONVEX_URL`.)
 
 ## Playing
 

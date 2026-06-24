@@ -7,6 +7,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
 import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
+import { errText } from "./errors";
 
 const NAME_KEY = "tinkerchess:name";
 const MAX_NAME = 24;
@@ -79,7 +80,7 @@ export default function Home() {
       setPendingId(gameId);
       setShowCreate(false);
     } catch (e) {
-      alert(`Could not create a game: ${(e as Error).message}`);
+      alert(`Could not create a game: ${errText(e)}`);
     } finally {
       setBusy(false);
     }
@@ -119,7 +120,7 @@ export default function Home() {
       router.push(`/game/${gameId}`);
     } catch (e) {
       setJoining(false);
-      setJoinError((e as Error).message);
+      setJoinError(errText(e));
     }
   };
 
