@@ -36,29 +36,24 @@ All three must pass. New behavior needs tests — we err on the side of too many
 ## Versioning
 
 The version (in `package.json`, shown in the corner of the running app) follows
-**semantic versioning**, bumped by a **test-informed** rule — the kind of test a
-change adds or touches decides the bump:
-
-| Change | Bump | In this repo |
-|---|---|---|
-| Add/extend a **unit** test (a fix or internal change) | **patch** | `src/engine/*.test.ts` |
-| Add a **new functional / acceptance** test (new user-visible behavior) | **minor** | a new test in `convex/*.test.ts` |
-| **Modify** an existing functional / acceptance test (changed behavior) | **major** | an edited test in `convex/*.test.ts` |
-
-Unit tests are the pure engine rules (`src/engine/`); functional/acceptance tests
-drive the real Convex functions end-to-end (`convex/games.test.ts`).
-
-**Pre-release rule.** We are pre-1.0 and stay there until the milestones in
+**semantic versioning**. We are **pre-1.0** and stay there until the milestones in
 [`ROADMAP.md`](./ROADMAP.md) are done — **1.0 is the milestone release, not a
-routine bump**. Until then the leading `0` is frozen, so a major-tier change (a
-modified acceptance test) advances the **minor** digit, same as a minor-tier
-change. In practice, pre-1.0:
+routine bump** — so the leading `0` stays frozen for now.
 
-- unit-test change → bump the patch (`0.x.PATCH`)
-- new **or** modified acceptance test → bump the minor (`0.MINOR.0`)
+While pre-1.0, a loose heuristic:
 
-Bump `package.json` `version` in the same PR as the change. Post-1.0, the three
-tiers map to major / minor / patch directly.
+- **New functionality → bump the minor** (`0.MINOR.0`). Usually lands a new
+  functional/acceptance test (`convex/*.test.ts`).
+- **A fix to existing functionality → bump the patch** (`0.x.PATCH`). Usually lands
+  a regression or unit test (`src/engine/*.test.ts`).
+- **Docs / CI / infra only → no version change.**
+
+Examples: the iPad/touch UX was new functionality → **minor**; fixing the
+illegal-move error message was a fix → **patch**.
+
+Bump `package.json` `version` in the same PR as the change. (Post-1.0 we tighten
+this to a test-driven rule: a unit test → patch, a new acceptance test → minor, a
+*modified* acceptance test → major.)
 
 ## Architecture & hard rules
 
