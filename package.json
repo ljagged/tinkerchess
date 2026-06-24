@@ -4,6 +4,9 @@
   "private": true,
   "description": "TinkerChess — a moddable fog-of-war chess variant (phasing mechanic; checkmate rules).",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
