@@ -713,6 +713,48 @@ function PhasePopover({
   );
 }
 
+// The four legal promotion pieces, in value order (queen first — the common pick).
+const PROMOTION_PIECES = ["q", "r", "b", "n"] as const;
+
+/**
+ * The promotion picker: when a pawn reaches the last rank, choose what it becomes
+ * (queen / rook / bishop / knight) instead of always auto-queening. Anchored over
+ * the destination square; clicking off cancels (handled by the parent).
+ */
+function PromotionPopover({
+  left,
+  top,
+  color,
+  onPick,
+}: {
+  left: number;
+  top: number;
+  color: "w" | "b";
+  onPick: (piece: (typeof PROMOTION_PIECES)[number]) => void;
+}) {
+  return (
+    <div
+      className="promo-pop"
+      style={{ left, top }}
+      role="dialog"
+      aria-label="Choose promotion piece"
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {PROMOTION_PIECES.map((t) => (
+        <button
+          key={t}
+          className="promo-choice"
+          aria-label={`Promote to ${PIECE_NAME[t]}`}
+          onClick={() => onPick(t)}
+        >
+          {GLYPHS[color][t]}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function GameClient({ gameId }: { gameId: string }) {
   const id = gameId as Id<"games">;
   const router = useRouter();
@@ -730,6 +772,9 @@ export function GameClient({ gameId }: { gameId: string }) {
   // move there. Drag still works as a power-user shortcut. `selected` is the
   // chosen origin square index (null = nothing selected).
   const [selected, setSelected] = useState<number | null>(null);
+  // A pawn move awaiting a promotion-piece choice (from→to), or null. While set,
+  // the promotion picker is shown over the destination square.
+  const [pendingPromo, setPendingPromo] = useState<{ from: number; to: number } | null>(null);
   const [replay, setReplay] = useState<{ id: Id<"matches">; color: "w" | "b" | null } | null>(null);
   // Rematch time-control chooser (opened from the game-over banner).
   const [showRematch, setShowRematch] = useState(false);
@@ -810,6 +855,22 @@ export function GameClient({ gameId }: { gameId: string }) {
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [phaseFrom]);
+
+  // While the promotion picker is open, a click/keypress off it cancels (the pawn
+  // move is abandoned). Escape also cancels.
+  useEffect(() => {
+    if (pendingPromo === null) return;
+    const onDown = (e: Event) => {
+      if (!(e.target as HTMLElement).closest(".promo-pop")) setPendingPromo(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPendingPromo(null);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pendingPromo]);
 
   const view = useQuery(
     api.games.getGameView,
@@ -953,18 +1014,24 @@ export function GameClient({ gameId }: { gameId: string }) {
     popTop = pos.top + cell + 8;
     if (popTop + POP_H > boardWidth) popTop = Math.max(8, pos.top - POP_H - 8);
   }
+  // Anchor the promotion picker (a row of 4 piece buttons) over the destination
+  // square, clamped to the board and flipped above if it would overflow the bottom.
+  const PROMO_W = 4 * cell + 12;
+  const PROMO_H = cell + 12;
+  let promoLeft = 0;
+  let promoTop = 0;
+  if (pendingPromo !== null) {
+    const pos = squarePos(pendingPromo.to);
+    promoLeft = Math.min(Math.max(0, pos.left + cell / 2 - PROMO_W / 2), Math.max(0, boardWidth - PROMO_W));
+    promoTop = pos.top + cell + 6;
+    if (promoTop + PROMO_H > boardWidth) promoTop = Math.max(6, pos.top - PROMO_H - 6);
+  }
 
   // --- handlers ---
-  // Submit a move from one square index to another. Shared by tap-to-move and
-  // drag. The server validates legality (authoritative under fog), so we only
-  // need to auto-queen a pawn reaching the back rank.
-  const doMove = (from: number, to: number) => {
-    if (!myTurn || !seat.seatToken) return;
-    const p = view.board[from];
-    if (!p) return;
-    const toRank = Math.floor(to / 8); // 0 = rank 1 … 7 = rank 8
-    const lastRank = p.color === "w" ? toRank === 7 : toRank === 0;
-    const promotion = p.type === "p" && lastRank ? ("q" as const) : undefined;
+  // Fire a move at the server (authoritative under fog). `promotion` is set only
+  // for a pawn reaching the last rank, chosen via the promotion picker.
+  const submitMove = (from: number, to: number, promotion?: (typeof PROMOTION_PIECES)[number]) => {
+    if (!seat.seatToken) return;
     makeMove({
       gameId: id,
       seatToken: seat.seatToken,
@@ -974,6 +1041,30 @@ export function GameClient({ gameId }: { gameId: string }) {
       requestId: crypto.randomUUID(), // reused by Convex on retry -> idempotent
       expectedPly: view.turnsTaken.w + view.turnsTaken.b,
     }).catch((e) => setError(errText(e)));
+  };
+
+  // Submit a move from one square index to another. Shared by tap-to-move and
+  // drag. A pawn reaching the back rank opens the promotion picker (queen / rook /
+  // bishop / knight) instead of silently auto-queening.
+  const doMove = (from: number, to: number) => {
+    if (!myTurn || !seat.seatToken) return;
+    const p = view.board[from];
+    if (!p) return;
+    const toRank = Math.floor(to / 8); // 0 = rank 1 … 7 = rank 8
+    const lastRank = p.color === "w" ? toRank === 7 : toRank === 0;
+    if (p.type === "p" && lastRank && (view.legalMoves?.[from]?.includes(to) ?? true)) {
+      setPendingPromo({ from, to }); // pick the piece before submitting
+      return;
+    }
+    submitMove(from, to);
+  };
+
+  // The chosen promotion piece submits the pending pawn move.
+  const choosePromotion = (piece: (typeof PROMOTION_PIECES)[number]) => {
+    if (!pendingPromo) return;
+    submitMove(pendingPromo.from, pendingPromo.to, piece);
+    setPendingPromo(null);
+    setSelected(null);
   };
 
   const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target) => {
@@ -1322,6 +1413,14 @@ export function GameClient({ gameId }: { gameId: string }) {
                     duration={phaseDuration}
                     setDuration={setPhaseDuration}
                     onConfirm={confirmPhase}
+                  />
+                )}
+                {pendingPromo !== null && (
+                  <PromotionPopover
+                    left={promoLeft}
+                    top={promoTop}
+                    color={myColor === "b" ? "b" : "w"}
+                    onPick={choosePromotion}
                   />
                 )}
                 <div

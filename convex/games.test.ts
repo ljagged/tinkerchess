@@ -2,7 +2,7 @@
 // @vitest-environment edge-runtime
 import { convexTest } from "convex-test";
 import { describe, it, expect } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { parseSquare } from "../src/engine/index.js";
 
@@ -572,6 +572,74 @@ describe("chess clock", () => {
     expect(view!.status).toBe("b_won");
     expect(view!.endReason).toBe("timeout");
     expect(view!.board[parseSquare("e4")]).toBeNull(); // the move did not apply
+  });
+});
+
+describe("server-side timeout (scheduler)", () => {
+  it("scheduling: a timed game has a pending timeout job once it starts", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    // Before join: no job (clock not running yet). An absent optional field comes
+    // back as null through t.run's return serialization.
+    const before = await t.run(async (ctx) => (await ctx.db.get("games", init.gameId))!.timeoutJob);
+    expect(before).toBeFalsy();
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    const after = await t.run(async (ctx) => (await ctx.db.get("games", init.gameId))!.timeoutJob);
+    expect(after).toBeTruthy(); // white's flag is scheduled server-side
+  });
+
+  it("timeoutCheck ends the game when the running side is out of time (no client needed)", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    // Backdate white's running clock past its full time.
+    await t.run(async (ctx) => {
+      const game = (await ctx.db.get("games", init.gameId))!;
+      await ctx.db.patch("games", init.gameId, {
+        clock: { ...game.clock!, runningSince: Date.now() - 200_000 },
+      });
+    });
+    // The scheduler fires this internal mutation — invoke it directly.
+    await t.mutation(internal.games.timeoutCheck, { gameId: init.gameId });
+    const view = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(view!.status).toBe("b_won"); // white (to move) flagged → black wins
+    expect(view!.endReason).toBe("timeout");
+  });
+
+  it("timeoutCheck is a no-op when the clock has not expired", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "rapid_10_5" });
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    await t.mutation(internal.games.timeoutCheck, { gameId: init.gameId });
+    const view = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(view!.status).toBe("active");
+  });
+
+  it("a game that ends on a zero-ply timeout is still archived on rematch", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { timeControl: "blitz_3_2" });
+    await t.mutation(api.games.joinByToken, { token: init.joinToken });
+    await t.run(async (ctx) => {
+      const game = (await ctx.db.get("games", init.gameId))!;
+      await ctx.db.patch("games", init.gameId, {
+        clock: { ...game.clock!, runningSince: Date.now() - 200_000 },
+      });
+    });
+    await t.mutation(internal.games.timeoutCheck, { gameId: init.gameId }); // flags at ply 0
+    await t.mutation(api.games.newGame, { gameId: init.gameId, seatToken: init.seatToken });
+    const history = await t.query(api.games.getMatchHistory, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    expect(history.length).toBe(1);
+    expect(history[0]!.plies).toBe(0);
+    expect(history[0]!.endReason).toBe("timeout");
   });
 });
 
