@@ -11,6 +11,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { loadSeat, type Seat } from "../../seat";
 import { CopyButton, formatToken } from "../../token";
 import { errText } from "../../errors";
+import { TimeControlPicker } from "../../TimeControlPicker";
+import { remainingFor, DEFAULT_TIME_CONTROL, type TimeControlId } from "@/src/timecontrol";
 
 // The engine is intentionally NOT imported here — the server is authoritative
 // and getGameView hands us exactly what we're allowed to see. The client only
@@ -231,6 +233,118 @@ function PhaseTray({
   );
 }
 
+// Low-time threshold: under this we show tenths and switch on the urgent shape
+// cue (bold + solid border), per DESIGN.md (never color alone).
+const CLOCK_LOW_MS = 20_000;
+
+/** Format remaining ms as M:SS, or S.t under 20s (tenths). Clamps at 0. */
+function fmtClock(ms: number): string {
+  const clamped = Math.max(0, ms);
+  if (clamped < CLOCK_LOW_MS) {
+    const tenths = Math.floor(clamped / 100);
+    return `${Math.floor(tenths / 10)}.${tenths % 10}`;
+  }
+  const totalSec = Math.floor(clamped / 1000);
+  return `${Math.floor(totalSec / 60)}:${String(totalSec % 60).padStart(2, "0")}`;
+}
+
+/**
+ * A player's clock chip (DESIGN.md: monospace, active side emphasized). The
+ * running side gets `.active`; low time pairs the danger color with a bold,
+ * bordered shape cue (not color alone); an expired clock reads as `.flagged`.
+ */
+function Clock({ ms, active }: { ms: number; active: boolean }) {
+  const low = ms < CLOCK_LOW_MS;
+  const cls = ["clock", active ? "active" : "", low ? "low" : "", ms <= 0 ? "flagged" : ""]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <span className={cls} aria-label={`${active ? "Your clock, " : ""}time remaining ${fmtClock(ms)}`}>
+      {fmtClock(ms)}
+    </span>
+  );
+}
+
+type LiveClockData = NonNullable<GameView["clock"]>;
+
+/**
+ * A self-contained ticking clock. It owns its OWN interval, so only this chip
+ * re-renders 5×/sec while running — the board and rails stay still (the tick used
+ * to live in GameClient and re-rendered the whole screen, jank on tablets). When
+ * this side isn't the running side, it shows banked time and does no work.
+ * `offsetMs` aligns the client to server time (serverNow − Date.now()).
+ */
+function LiveClock({
+  clock,
+  side,
+  turn,
+  offsetMs,
+}: {
+  clock: LiveClockData;
+  side: "w" | "b";
+  turn: "w" | "b";
+  offsetMs: number;
+}) {
+  const running = clock.runningSince !== null && turn === side;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const handle = setInterval(() => setTick((t) => t + 1), 200);
+    return () => clearInterval(handle);
+  }, [running]);
+  const ms = remainingFor(clock, side, turn, Date.now() + offsetMs);
+  return <Clock ms={ms} active={running} />;
+}
+
+/**
+ * Invisible watcher that claims the flag once the running clock crosses zero. It
+ * polls at 1s (sub-second flag precision isn't needed) on its own interval, so it
+ * doesn't re-render the board. The server re-checks authoritatively: a premature
+ * claim returns a still-active view, and we RESET the guard so a genuinely-expired
+ * clock is re-claimed on the next tick (a no-op is a success, not an error — the
+ * earlier version latched the guard on it and stopped trying). Mounted only while
+ * a clock is actually running and the viewer holds a seat.
+ */
+function TimeoutFlagger({
+  clock,
+  turn,
+  offsetMs,
+  gameId,
+  seatToken,
+}: {
+  clock: LiveClockData;
+  turn: "w" | "b";
+  offsetMs: number;
+  gameId: Id<"games">;
+  seatToken: string;
+}) {
+  const flagTimeout = useMutation(api.games.flagTimeout);
+  const sentRef = useRef(false);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const handle = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(handle);
+  }, []);
+  // New running period (a move switched sides) → allow a fresh claim.
+  useEffect(() => {
+    sentRef.current = false;
+  }, [clock.runningSince, turn]);
+  useEffect(() => {
+    if (sentRef.current) return;
+    if (remainingFor(clock, turn, turn, Date.now() + offsetMs) > 0) return;
+    sentRef.current = true;
+    flagTimeout({ gameId, seatToken })
+      .then((v) => {
+        // Server says still active (our estimate was early) → retry next tick.
+        if (v && v.status === "active") sentRef.current = false;
+      })
+      .catch(() => {
+        sentRef.current = false;
+      });
+  }, [tick, clock, turn, offsetMs, flagTimeout, gameId, seatToken]);
+  return null;
+}
+
 type MatchSummary = NonNullable<FunctionReturnType<typeof api.games.getMatchHistory>>[number];
 
 function matchResultText(m: MatchSummary): string {
@@ -239,8 +353,9 @@ function matchResultText(m: MatchSummary): string {
     return m.endReason === "repetition" ? "Draw (repetition)" : "Draw (stalemate)";
   }
   const winner = m.status === "w_won" ? "w" : "b";
-  if (m.yourColor) return m.yourColor === winner ? "You won" : "You lost";
-  return winner === "w" ? "White won" : "Black won";
+  const onTime = m.endReason === "timeout" ? " on time" : "";
+  if (m.yourColor) return (m.yourColor === winner ? "You won" : "You lost") + onTime;
+  return (winner === "w" ? "White won" : "Black won") + onTime;
 }
 
 /** Past finished games for this game's seats. Self-hides when there are none. */
@@ -616,6 +731,13 @@ export function GameClient({ gameId }: { gameId: string }) {
   // chosen origin square index (null = nothing selected).
   const [selected, setSelected] = useState<number | null>(null);
   const [replay, setReplay] = useState<{ id: Id<"matches">; color: "w" | "b" | null } | null>(null);
+  // Rematch time-control chooser (opened from the game-over banner).
+  const [showRematch, setShowRematch] = useState(false);
+  const [rematchTC, setRematchTC] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
+  // Client→server clock offset (serverNow − Date.now()), refreshed whenever a new
+  // view arrives. The actual ticking + flag-claim live in the isolated <LiveClock>
+  // / <TimeoutFlagger> components so they don't re-render the board.
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
 
   // Board sizing: the board fills its column up to a user-set max (drag handle,
   // persisted) and is clamped to whatever the column actually offers. This makes
@@ -693,6 +815,13 @@ export function GameClient({ gameId }: { gameId: string }) {
     api.games.getGameView,
     seat ? { gameId: id, seatToken: seat.seatToken ?? undefined } : "skip",
   );
+
+  // Re-align to server time whenever a fresh view (with serverNow) arrives. This
+  // updates only on data changes (infrequent), not on every clock tick.
+  const serverNow = view?.serverNow;
+  useEffect(() => {
+    if (serverNow != null) setClockOffsetMs(serverNow - Date.now());
+  }, [serverNow]);
 
   if (noSeat) return <main className="wrap">Redirecting…</main>;
   if (!seat || view === undefined) return <main className="wrap">Loading…</main>;
@@ -772,6 +901,13 @@ export function GameClient({ gameId }: { gameId: string }) {
   const selIdx = selValid ? (selected as number) : null;
   if (selIdx !== null) {
     styles[idxToSquare(selIdx)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected to move
+    // Legal-move hints for the selected piece (DESIGN.md): a teal dot on an empty
+    // target, a teal ring around a capturable piece. Shown ONLY while selected.
+    for (const t of view.legalMoves?.[selIdx] ?? []) {
+      styles[idxToSquare(t)] = view.board[t]
+        ? { boxShadow: "inset 0 0 0 4px var(--legal)", borderRadius: "8px" } // capture ring
+        : { background: "radial-gradient(circle, var(--legal) 16%, transparent 19%)" }; // dot
+    }
   }
   if (phaseFrom !== null) {
     styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // phasing
@@ -924,10 +1060,21 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
   };
 
+  // Open the rematch chooser, defaulting to the time control just played. An
+  // untimed game (no clock) must default to "untimed" — defaulting to a timed
+  // preset would silently turn an untimed rematch into a timed one, since the
+  // client always sends an explicit preset (carry-forward only runs server-side
+  // when the arg is omitted).
+  const openRematch = () => {
+    setRematchTC((view.clock?.preset as TimeControlId | undefined) ?? "untimed");
+    setShowRematch(true);
+  };
+
   const startNewGame = async () => {
     if (!seat.seatToken) return;
     try {
-      await newGame({ gameId: id, seatToken: seat.seatToken });
+      await newGame({ gameId: id, seatToken: seat.seatToken, timeControl: rematchTC });
+      setShowRematch(false);
       setPhaseFrom(null);
       setError(null);
     } catch (e) {
@@ -991,11 +1138,19 @@ export function GameClient({ gameId }: { gameId: string }) {
   } else {
     const winner = view.status === "w_won" ? "w" : "b";
     const youWon = isPlayer && myColor === winner;
-    status = isPlayer
-      ? youWon
-        ? "Checkmate — you win!"
-        : "Checkmate — you lose."
-      : `Checkmate — ${colorName(winner)} wins.`;
+    if (view.endReason === "timeout") {
+      status = isPlayer
+        ? youWon
+          ? "Won on time!"
+          : "Lost on time."
+        : `${colorName(winner)} won on time.`;
+    } else {
+      status = isPlayer
+        ? youWon
+          ? "Checkmate — you win!"
+          : "Checkmate — you lose."
+        : `Checkmate — ${colorName(winner)} wins.`;
+    }
   }
 
   // --- non-terminal self-capture notice ("X captured their own rook") ---
@@ -1013,6 +1168,10 @@ export function GameClient({ gameId }: { gameId: string }) {
   const bottomColor: "w" | "b" = myColor === "b" ? "b" : "w";
   const topColor: "w" | "b" = bottomColor === "w" ? "b" : "w";
   const glyphSize = Math.round(boardWidth / 14);
+
+  // The clock (null for an untimed game). Each side renders an isolated <LiveClock>
+  // that ticks on its own; <TimeoutFlagger> (mounted once below) claims the flag.
+  const clock = view.clock;
 
   // Player names (entered at create/join). Fall back to You/Opponent for the
   // viewer's seats, or White/Black for a spectator.
@@ -1033,7 +1192,7 @@ export function GameClient({ gameId }: { gameId: string }) {
         <div className="gameover-banner panel">
           <div className="gameover-status">{status}</div>
           {isPlayer && (
-            <button className="primary gameover-btn" onClick={startNewGame}>
+            <button className="primary gameover-btn" onClick={openRematch}>
               New game
             </button>
           )}
@@ -1053,6 +1212,9 @@ export function GameClient({ gameId }: { gameId: string }) {
                 {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
+              {clock && (
+                <LiveClock clock={clock} side={topColor} turn={view.turn} offsetMs={clockOffsetMs} />
+              )}
             </div>
           </div>
         </div>
@@ -1183,6 +1345,9 @@ export function GameClient({ gameId }: { gameId: string }) {
                 {myTurn && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
+              {clock && (
+                <LiveClock clock={clock} side={bottomColor} turn={view.turn} offsetMs={clockOffsetMs} />
+              )}
             </div>
           </div>
           {isPlayer && view.status === "active" && (
@@ -1196,6 +1361,15 @@ export function GameClient({ gameId }: { gameId: string }) {
             </div>
           )}
           <span className="sr-only" aria-live="polite">{status}</span>
+          {clock && view.status === "active" && clock.runningSince !== null && seat.seatToken && (
+            <TimeoutFlagger
+              clock={clock}
+              turn={view.turn}
+              offsetMs={clockOffsetMs}
+              gameId={id}
+              seatToken={seat.seatToken}
+            />
+          )}
         </section>
 
         {/* RIGHT RAIL — communication (the tool icons live in the header above). */}
@@ -1218,6 +1392,30 @@ export function GameClient({ gameId }: { gameId: string }) {
           defaultColor={replay.color}
           onClose={() => setReplay(null)}
         />
+      )}
+
+      {showRematch && (
+        <div className="replay-overlay" onClick={() => setShowRematch(false)}>
+          <div
+            className="replay-card"
+            style={{ maxWidth: 440 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <strong>New game</strong>
+              <button onClick={() => setShowRematch(false)}>Cancel</button>
+            </div>
+            <div className="field-label">
+              Time control
+              <TimeControlPicker value={rematchTC} onChange={setRematchTC} />
+            </div>
+            <div className="row" style={{ justifyContent: "flex-end" }}>
+              <button className="primary" onClick={startNewGame}>
+                Start game
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   );

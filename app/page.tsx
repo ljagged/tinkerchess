@@ -8,8 +8,11 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
 import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
 import { errText } from "./errors";
+import { TimeControlPicker } from "./TimeControlPicker";
+import { DEFAULT_TIME_CONTROL, type TimeControlId } from "@/src/timecontrol";
 
 const NAME_KEY = "tinkerchess:name";
+const TC_KEY = "tinkerchess:timeControl";
 const MAX_NAME = 24;
 
 export default function Home() {
@@ -29,9 +32,13 @@ export default function Home() {
   // ruleset picker is intentionally hidden for now (defaults apply); it returns
   // with a fuller settings screen later.
   const [playerName, setPlayerName] = useState("");
+  // Chosen time control, remembered locally so it defaults to your last pick.
+  const [timeControl, setTimeControl] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
   useEffect(() => {
     try {
       setPlayerName(localStorage.getItem(NAME_KEY) ?? "");
+      const tc = localStorage.getItem(TC_KEY) as TimeControlId | null;
+      if (tc) setTimeControl(tc);
     } catch {
       /* ignore */
     }
@@ -72,9 +79,14 @@ export default function Home() {
   const onNewGame = async () => {
     const name = playerName.trim() || undefined;
     rememberName(playerName.trim());
+    try {
+      localStorage.setItem(TC_KEY, timeControl);
+    } catch {
+      /* ignore */
+    }
     setBusy(true);
     try {
-      const { gameId, seatToken } = await createGame({ name });
+      const { gameId, seatToken } = await createGame({ name, timeControl });
       saveSeat(gameId, { seatToken });
       savePending(gameId);
       setPendingId(gameId);
@@ -178,6 +190,10 @@ export default function Home() {
               autoFocus
             />
           </label>
+          <div className="field-label">
+            Time control
+            <TimeControlPicker value={timeControl} onChange={setTimeControl} />
+          </div>
           <div className="row" style={{ justifyContent: "flex-end" }}>
             <button onClick={() => setShowCreate(false)} disabled={busy}>Cancel</button>
             <button className="primary" onClick={onNewGame} disabled={busy}>
