@@ -109,12 +109,16 @@ their identities, or their timers. They observe only that a piece vanished from 
 visible square (so they know which piece left, and from where, but never for how
 long).
 
-4.3 **The return warning (the "ring").** During the single opponent turn that
-immediately precedes a piece's return, the piece's **origin square** is shown to
-the opponent as a warning — **square only**, with no piece identity and no timer.
-This is the **ring**. It appears exactly one of the opponent's turns before the
-return resolves, and never earlier. A return that is two or more turns away is
-completely invisible to the opponent.
+4.3 **The return warning (the "ring").** On the single turn before an
+**opponent's** piece returns, that piece's **origin square** is flagged to you as a
+warning — **square only**, with no piece identity and no timer. This is the
+**ring**: it is the view of an incoming return granted to the side that does **not**
+own the returning piece, and the only cue that side gets. It appears exactly one
+turn before the return resolves and never earlier; a return two or more turns away
+shows no ring. (The piece's **owner** is never warned by a ring — they already see
+their own pending return in full, identity and square and countdown, the whole
+time, per 4.1. So the return square is not hidden from the owner; only the
+square-only, one-turn ring is hidden, and only until the return is imminent.)
 
 4.4 Spectators see neither player's phased pieces nor any warning ring.
 
@@ -133,10 +137,11 @@ ring. Restrictions tied to a return key **only** on the publicly visible ring
   scheduled to return onto the king's square on the enemy's next turn. This is a
   **ringed check** (and is unique to TinkerChess).
 
-5.2 **Ring ownership is decisive.** Only an **enemy** ring gives check. A ring for
-**your own** returning piece on your own king's square is **not** a check: your king
-may legally remain there, and if it does, the returning piece self-destructs
-(3.3) — harmlessly.
+5.2 **Ring ownership is decisive.** Only an **enemy** ring gives check. Your
+**own** piece scheduled to return onto your own king's square is **not** a check —
+it is not a ring at all (a ring is only ever the warning you see for an
+*opponent's* return, per 4.3). Your king may legally remain there; if it does, the
+returning piece self-destructs (3.3) — harmlessly.
 
 5.3 A phased piece is **never** part of attack generation. A scheduled return does
 not attack along lines, does not pin, does not defend, and does not guard any
@@ -175,8 +180,13 @@ answered by a move.
 with no safe flight square is checkmated at that moment — the turn before the
 return would resolve — so the enemy return never falls on a live king (Article 9).
 
-6.6 A ringed check is therefore **stricter** than a standard check: it admits only
-king flight, so mate by a ringed check arises more readily than an ordinary mate.
+6.6 **(Non-normative.)** A ringed check is harder to *answer* than a standard
+check — only king flight resolves it (6.3) — but correspondingly harder to
+*force*: a pending return threatens no square at a distance and only on the single
+turn its ring shows, so it bears on the enemy king only when that king already
+stands on the return's exact origin square. A ringed mate is therefore a
+situational, largely endgame affair (a king with no flight from such a square),
+not a routine occurrence.
 
 ---
 

@@ -33,7 +33,7 @@ Standard chess — **check, checkmate, stalemate, threefold-repetition draws** �
 
 The visual system ("Lab Slate") lives in [`DESIGN.md`](./DESIGN.md) — read it before
 any UI change. **Hard rule:** never encode a game state with color alone; every state
-pairs a shape/border/motion cue with a label (the primary player is colorblind).
+pairs a shape/border/motion cue with a label.
 
 ## Architecture
 
