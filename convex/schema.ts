@@ -31,11 +31,27 @@ export const selfCaptureEventV = v.object({
 });
 
 // Why a finished game ended (mirrors the engine EndReason). Absent while active.
+// "timeout" is adjudicated by the Convex clock layer (see games.ts), not the engine.
 export const endReasonV = v.union(
   v.literal("checkmate"),
   v.literal("stalemate"),
   v.literal("repetition"),
+  v.literal("timeout"),
 );
+
+// The chess clock stored on a game (mirrors src/timecontrol.ts `Clock`). Optional:
+// ABSENT means an untimed game — which is also how games created before clocks
+// existed read, so back-compat is free. `preset` is one of the TimeControlId
+// strings; durations are resolved server-side from the id, never trusted from a
+// client. `runningSince` is the server epoch-ms when the side-to-move's period
+// began, or null while waiting for an opponent / after the game is over.
+export const clockV = v.object({
+  preset: v.string(),
+  initialMs: v.number(),
+  incrementMs: v.number(),
+  remaining: v.object({ w: v.number(), b: v.number() }),
+  runningSince: v.union(v.number(), v.null()),
+});
 
 // Per-game ruleset (Tier-1 Settings). Single source for phase-eligibility +
 // duration caps; 0 means that piece type cannot phase. Optional for back-compat
@@ -156,6 +172,9 @@ export default defineSchema({
     // to colors in getGameView via the white/black token mapping.
     initiatorName: v.optional(v.string()),
     opponentName: v.optional(v.string()),
+    // The chess clock, or absent for an untimed game (see clockV). Starts running
+    // when the opponent joins (white's period) and switches sides on each move.
+    clock: v.optional(clockV),
     createdAt: v.number(),
   }).index("by_join_token", ["joinToken"]),
 
