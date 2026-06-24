@@ -1,15 +1,15 @@
 // Pseudo-move generation and board mechanics for normal moves.
 //
-// Phase Chess divergences from standard chess that matter here:
-//   - Capturing the enemy KING is a legal move and ends the game (no checkmate).
-//   - There is NO "can't leave your king in check" filtering — moves are not
-//     pruned for king safety. (Self-capture is *not* allowed on a normal move;
-//     it only happens on phase-in, handled in phase.ts.)
-//   - Castling keeps the standard not-in/through/into-check constraints.
+// Standard chess rules apply: a move is legal only if it leaves the mover's own
+// king safe (see legalMovesFrom / kingSafe), and a king is never a capturable
+// target. `generateMoves` produces PSEUDO-legal moves; `legalMovesFrom` filters
+// them for king safety. Castling keeps the standard not-in/through/into-check
+// constraints, extended so an enemy imminent-return ring counts like an attacked
+// square (a king cannot castle into or through a ringed square).
 //
 // applyMove performs the board mechanics only. It does NOT flip the turn or
-// touch the turn counters / phase timers — game.ts orchestrates that so the
-// phase-in-at-start-of-turn rule lives in one place.
+// touch the turn counters / phase timers — game.ts orchestrates that, and the
+// end-of-turn phase-in resolution lives there.
 
 import {
   cloneState,
@@ -20,8 +20,10 @@ import {
   squareIndex,
 } from "./board.js";
 import { isAttacked } from "./attacks.js";
+import { kingSafe, warningSquaresFor } from "./phase.js";
 import type {
   Color,
+  GameEvent,
   GameState,
   Move,
   Piece,
@@ -168,12 +170,18 @@ function castlingMoves(state: GameState, from: SquareIndex, color: Color): Move[
   if (from !== homeKing) return moves;
   const enemy: Color = color === "w" ? "b" : "w";
   const rank = color === "w" ? 0 : 7;
+  // An enemy imminent-return ring counts like an attacked square: the king may
+  // not castle into or through a ringed square (it would be a S5a check there).
+  const rings = warningSquaresFor(state, color);
   const empty = (file: number) => !pieceAt(state.board, squareIndex(file, rank));
-  const safe = (file: number) => !isAttacked(state, squareIndex(file, rank), enemy);
+  const safe = (file: number) => {
+    const sq = squareIndex(file, rank);
+    return !isAttacked(state, sq, enemy) && !rings.includes(sq);
+  };
   const rights = state.castling;
 
-  // King may not castle out of check.
-  if (isAttacked(state, homeKing, enemy)) return moves;
+  // King may not castle out of check (standard attack or an enemy ring on it).
+  if (!kingSafe(state, color)) return moves;
 
   // Kingside: squares f,g empty; king path e,f,g safe.
   const kingsideRight = color === "w" ? rights.wK : rights.bK;
@@ -192,9 +200,28 @@ function castlingMoves(state: GameState, from: SquareIndex, color: Color): Move[
   return moves;
 }
 
-/** True if (from,to,promotion) is among the generated pseudo-legal moves. */
+/**
+ * Fully-legal moves for the piece on `from`: pseudo-moves that do NOT capture a
+ * king (no king is ever a legal target — S9) and that leave the mover's own king
+ * safe (not in check, not on an enemy ring — kingSafe). This is where standard
+ * chess king-safety is restored, and where the S5a ringed-king "flight only" rule
+ * falls out for free: any non-king move that leaves the king on a ringed square
+ * fails kingSafe and is filtered out.
+ */
+export function legalMovesFrom(state: GameState, from: SquareIndex): Move[] {
+  const piece = pieceAt(state.board, from);
+  if (!piece) return [];
+  const mover = piece.color;
+  return generateMoves(state, from).filter((m) => {
+    const target = pieceAt(state.board, m.to);
+    if (target && target.type === "k") return false; // a king is never a legal target
+    return kingSafe(applyMove(state, m), mover);
+  });
+}
+
+/** True if `move` is fully legal (king-safe and not a king capture). */
 export function isLegalMove(state: GameState, move: Move): boolean {
-  return generateMoves(state, move.from).some(
+  return legalMovesFrom(state, move.from).some(
     (m) => m.to === move.to && m.promotion === move.promotion,
   );
 }
@@ -252,17 +279,57 @@ export function applyMove(state: GameState, move: Move): GameState {
       ? squareIndex(fromFile, (rankOf(move.from) + rankOf(move.to)) / 2)
       : null;
 
-  // Record captured pieces (normal capture and/or en passant).
+  // Record captured pieces (normal capture and/or en passant). A king is never a
+  // legal capture target (see legalMovesFrom), so no king is ever recorded here.
   if (captured) next.captured[captured.color].push(captured.type);
   if (enPassantCapture) next.captured[enPassantCapture.color].push(enPassantCapture.type);
 
-  // Win by king capture (normal or en-passant — though a king is never taken en passant).
-  const king = captured ?? enPassantCapture;
-  if (king && king.type === "k") {
-    next.status = king.color === "w" ? "b_won" : "w_won";
+  return next;
+}
+
+/**
+ * Derive the move event (capture, en-passant, castle, promotion) from the
+ * pre-state and the move. Pure; does not mutate. The `check` / `checkmate` flags
+ * are NOT set here — they depend on the FINAL post-return board the opponent will
+ * face, so they are stamped during adjudication in game.ts.
+ */
+export function deriveMoveEvent(pre: GameState, move: Move): GameEvent {
+  const piece = pieceAt(pre.board, move.from);
+  if (!piece) throw new Error(`no piece on square ${move.from}`);
+  const fromFile = fileOf(move.from);
+  const toFile = fileOf(move.to);
+  const isPawn = piece.type === "p";
+  const isKing = piece.type === "k";
+
+  let capture: { color: Color; type: PieceType } | undefined;
+  let enPassant = false;
+  const normal = pieceAt(pre.board, move.to);
+  if (normal) {
+    capture = { color: normal.color, type: normal.type };
+  } else if (isPawn && move.to === pre.enPassant && fromFile !== toFile) {
+    const ep = pieceAt(pre.board, squareIndex(toFile, rankOf(move.from)));
+    if (ep) {
+      capture = { color: ep.color, type: ep.type };
+      enPassant = true;
+    }
   }
 
-  return next;
+  const castle: "K" | "Q" | undefined =
+    isKing && Math.abs(toFile - fromFile) === 2 ? (toFile === 6 ? "K" : "Q") : undefined;
+  const promotion: Exclude<PieceType, "p" | "k"> | undefined =
+    isPawn && (rankOf(move.to) === 0 || rankOf(move.to) === 7) ? move.promotion ?? "q" : undefined;
+
+  return {
+    kind: "move",
+    color: piece.color,
+    piece: piece.type,
+    from: move.from,
+    to: move.to,
+    ...(capture ? { capture } : {}),
+    ...(enPassant ? { enPassant: true as const } : {}),
+    ...(castle ? { castle } : {}),
+    ...(promotion ? { promotion } : {}),
+  };
 }
 
 function updateCastlingRights(

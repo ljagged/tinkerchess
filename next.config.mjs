@@ -1,15 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config) => {
-    // Allow webpack to resolve the engine's `./foo.js` import specifiers to the
-    // `.ts` source (the engine is written with explicit ESM extensions). Only
-    // matters if the engine is ever imported into client/runtime code; harmless
-    // otherwise.
-    config.resolve.extensionAlias = {
-      ".js": [".ts", ".tsx", ".js", ".jsx"],
-    };
-    return config;
-  },
+  // The app never imports the pure engine (the server is authoritative; the
+  // engine is bundled only by Convex and the test runner, which resolve its
+  // `./foo.js` -> `.ts` ESM specifiers themselves). So Next needs no custom
+  // module resolution — Turbopack (the Next 16 default) runs with defaults.
+  turbopack: {},
 };
 
 export default nextConfig;

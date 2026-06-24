@@ -1,4 +1,4 @@
-// Public surface of the Phase Chess rules engine.
+// Public surface of the TinkerChess rules engine.
 
 export * from "./types.js";
 export {
@@ -12,23 +12,31 @@ export {
   initialState,
   cloneState,
   opponent,
+  positionKey,
 } from "./board.js";
 export { isAttacked, inCheck, findKing } from "./attacks.js";
-export { generateMoves, isLegalMove, applyMove } from "./moves.js";
+export { generateMoves, isLegalMove, legalMovesFrom, applyMove } from "./moves.js";
 export {
   isPhaseable,
   maxDuration,
+  kingSafe,
   validatePhaseOut,
   applyPhaseOut,
   resolvePhaseIns,
+  resolvePhaseInsWithEvents,
   ownPhased,
   warningSquaresFor,
 } from "./phase.js";
 export {
   createGame,
   applyAction,
+  applyActionWithEvents,
+  replay,
   legalMoves,
   viewFor,
+  revealView,
   IllegalActionError,
 } from "./game.js";
-export type { Viewer, GameView, ViewPhasedPiece } from "./game.js";
+export type { Viewer, GameView, ViewPhasedPiece, RevealView, RevealPhasedPiece } from "./game.js";
+export { toNotation, toSeatNotation } from "./notation.js";
+export type { NotationOptions } from "./notation.js";

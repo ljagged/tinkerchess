@@ -8,7 +8,7 @@ export interface Seat {
   seatToken: string | null;
 }
 
-const key = (gameId: string) => `phasechess:seat:${gameId}`;
+const key = (gameId: string) => `tinkerchess:seat:${gameId}`;
 
 export function loadSeat(gameId: string): Seat | null {
   if (typeof window === "undefined") return null;
@@ -28,7 +28,7 @@ export function saveSeat(gameId: string, seat: Seat): void {
 
 // The game the initiator is currently waiting on (so the splash can resume the
 // waiting screen across refreshes, and navigate to the board once it starts).
-const PENDING_KEY = "phasechess:pending";
+const PENDING_KEY = "tinkerchess:pending";
 
 export function savePending(gameId: string): void {
   if (typeof window !== "undefined") window.localStorage.setItem(PENDING_KEY, gameId);

@@ -6,6 +6,7 @@ import {
   inCheck,
   isAttacked,
   legalMoves,
+  legalMovesFrom,
   maxDuration,
   ownPhased,
   parseSquare,
@@ -25,7 +26,6 @@ function emptyState(turn: Color = "w"): GameState {
     board: new Array<Piece | null>(64).fill(null),
     turn,
     status: "active",
-    wonBySelfCapture: false,
     lastEvent: null,
     phased: [],
     castling: { wK: false, wQ: false, bK: false, bQ: false },
@@ -84,19 +84,20 @@ describe("standard movement", () => {
   });
 });
 
-// --- win by capturing the king ---------------------------------------------
+// --- no king capture (kings are never legal targets) -----------------------
 
-describe("win condition: capture the king", () => {
-  it("ends the game the instant the enemy king is taken by a normal move", () => {
+describe("no king capture", () => {
+  it("never offers a move that captures the enemy king, and rejects it if attempted", () => {
     const s = emptyState("w");
     put(s, "d1", P("w", "q"));
+    put(s, "e1", P("w", "k"));
     put(s, "d8", P("b", "k"));
-    const next = applyAction(s, {
-      kind: "move",
-      move: { from: parseSquare("d1"), to: parseSquare("d8") },
-    });
-    expect(next.status).toBe("w_won");
-    expect(at(next, "d8")).toEqual(P("w", "q"));
+    // d1->d8 is pseudo-legal (clear file) but is NOT a legal move: a king is
+    // never a capturable target (S9). Standard chess never reaches this anyway.
+    expect(legalMovesFrom(s, parseSquare("d1")).map((m) => m.to)).not.toContain(parseSquare("d8"));
+    expect(() =>
+      applyAction(s, { kind: "move", move: { from: parseSquare("d1"), to: parseSquare("d8") } }),
+    ).toThrow(IllegalActionError);
   });
 });
 
@@ -153,14 +154,16 @@ describe("phase-out validation", () => {
     expect(validatePhaseOut(s, { from: parseSquare("e7"), duration: 1 }).ok).toBe(false);
   });
 
-  it("blocks the king from phasing while in check, but not other pieces", () => {
+  it("forbids ANY phase-out while in check (you must resolve check by a move)", () => {
     const s = emptyState("w");
     put(s, "e1", P("w", "k"));
     put(s, "b1", P("w", "n"));
     put(s, "e8", P("b", "r")); // checks the white king down the e-file
     expect(inCheck(s, "w")).toBe(true);
+    // The king can't phase out of check, and phasing the knight doesn't resolve
+    // the check (S7): after removal the king is still attacked, so it's illegal.
     expect(validatePhaseOut(s, { from: parseSquare("e1"), duration: 1 }).ok).toBe(false);
-    expect(validatePhaseOut(s, { from: parseSquare("b1"), duration: 2 }).ok).toBe(true);
+    expect(validatePhaseOut(s, { from: parseSquare("b1"), duration: 2 }).ok).toBe(false);
   });
 });
 
@@ -195,16 +198,18 @@ describe("phase-in resolution", () => {
     expect(next.lastEvent).toBeNull();
   });
 
-  it("wins by removing the ENEMY king on phase-in (not a self-capture)", () => {
-    const next = resolvePhaseIns(returningRook(P("b", "k")), "w");
-    expect(next.status).toBe("w_won");
-    expect(next.wonBySelfCapture).toBe(false);
+  it("never resolves a return onto a live ENEMY king (S9 — unreachable assert)", () => {
+    // S5a forces the enemy king off the square the turn before; reaching this
+    // directly is a bug, so the low-level resolver asserts rather than removing it.
+    expect(() => resolvePhaseIns(returningRook(P("b", "k")), "w")).toThrow();
   });
 
-  it("loses by removing your OWN king on phase-in (a footgun)", () => {
+  it("self-destructs the returning piece on its OWN king; the king is unaffected", () => {
     const next = resolvePhaseIns(returningRook(P("w", "k")), "w");
-    expect(next.status).toBe("b_won");
-    expect(next.wonBySelfCapture).toBe(true);
+    expect(at(next, "a1")).toEqual(P("w", "k")); // the king stands
+    expect(next.phased).toHaveLength(0); // the returning rook is gone (lost)
+    expect(next.captured.w).toEqual([]); // the king was NOT captured
+    expect(next.status).toBe("active"); // not a loss
   });
 });
 

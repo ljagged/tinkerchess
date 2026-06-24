@@ -1,13 +1,37 @@
+/* Fonts (Lab Slate — see DESIGN.md). Display: Cabinet Grotesk; body: Hanken
+   Grotesk; data/notation: JetBrains Mono. All open-licensed. */
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap");
+@import url("https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@700,800&display=swap");
+
 :root {
-  --bg: #14110f;
-  --panel: #211c19;
-  --border: #3a322c;
-  --text: #ece5dd;
-  --muted: #a8998b;
-  --accent: #c8964a;
-  --accent-dim: #6b5430;
-  --danger: #d2654f;
+  /* Lab Slate (dark) — the project design system. See DESIGN.md. */
+  --bg: #181c22;
+  --panel: #222933;
+  --panel-2: #2b333f;
+  --border: #313a46;
+  --text: #e8edf2;
+  --muted: #8a95a1;
+
+  /* State vocabulary — each color reserved for ONE meaning and ALWAYS paired with
+     a shape/border cue (the primary user is colorblind; never color alone). */
+  --phase: #27c2d8; /* your hidden / phased pieces (solid border) */
+  --warning: #ff8a3d; /* opponent return warning (dashed) */
+  --last-move: #f2c84b; /* last move (border) */
+  --legal: #3da5a0; /* legal move / capture */
+  --danger: #e5484d; /* check / destruction */
   --good: #6fae6f;
+
+  /* Board squares — colorblind-safe (high luminance delta, no red/green). */
+  --sq-light: #c9d2dc;
+  --sq-dark: #3e586e;
+
+  --accent: #27c2d8;
+  --accent-ink: #06222a; /* readable ink on the cyan accent */
+  --radius: 14px;
+
+  --display: "Cabinet Grotesk", system-ui, sans-serif;
+  --body: "Hanken Grotesk", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 * {
@@ -20,7 +44,15 @@ body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--display);
+  letter-spacing: -0.01em;
 }
 
 a {
@@ -31,10 +63,10 @@ button {
   font: inherit;
   cursor: pointer;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
   padding: 0.5rem 0.9rem;
-  border-radius: 8px;
+  border-radius: 10px;
   transition: border-color 0.15s ease;
 }
 button:hover:not(:disabled) {
@@ -47,9 +79,34 @@ button:disabled {
 
 .primary {
   background: var(--accent);
-  color: #1a1410;
+  color: var(--accent-ink);
   border-color: var(--accent);
   font-weight: 600;
+}
+
+/* Labeled text field (player name, etc.) */
+.field-label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.text-input {
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  width: 100%;
+}
+.text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.text-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .wrap {
@@ -61,7 +118,7 @@ button:disabled {
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   padding: 1rem 1.1rem;
 }
 
@@ -69,9 +126,602 @@ button:disabled {
   color: var(--muted);
 }
 
+.mono {
+  font-family: var(--mono);
+}
+
 .row {
   display: flex;
   gap: 0.6rem;
   align-items: center;
   flex-wrap: wrap;
+}
+
+/* Move log: two-column algebraic notation (SAN + ↑/↓ phase grammar), monospace
+   for column alignment. */
+.movelog {
+  font-family: var(--mono);
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 2px 12px;
+  align-items: baseline;
+}
+.movelog-n {
+  color: var(--muted);
+  text-align: right;
+}
+.movelog-revealed {
+  color: var(--phase);
+  font-size: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+/* Phase tray — the signature component (DESIGN.md). Your hidden pieces, each
+   wrapped in a cyan countdown ring with a turns-left badge. */
+.phasetray {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+.pp {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+}
+.pp-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--phase) var(--deg, 360deg), rgba(39, 194, 216, 0.18) 0);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px));
+}
+.pp-glyph {
+  opacity: 0.65;
+  color: var(--text);
+  line-height: 1;
+}
+.pp-num {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--phase);
+  border-radius: 999px;
+  width: 19px;
+  height: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Past-games list */
+.history {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+.history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.92rem;
+}
+.history .muted {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+/* Replay overlay (modal) */
+.replay-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 13, 17, 0.72);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 2.5rem 1rem;
+  overflow: auto;
+  z-index: 50;
+}
+.replay-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  max-width: 640px;
+  width: 100%;
+  display: grid;
+  gap: 1rem;
+}
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.replay-frame {
+  font-family: var(--mono);
+  color: var(--muted);
+  min-width: 5.5em;
+  text-align: center;
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.seg button {
+  border: 0;
+  border-radius: 0;
+  background: var(--panel-2);
+}
+.seg button.on {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* Coordinate gutters — labels live OUTSIDE the board (DESIGN.md), not inside the
+   squares where they're low-contrast. */
+.board-ranks {
+  display: grid;
+  grid-template-rows: repeat(8, 1fr);
+  height: 100%;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.board-files {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.board-ranks span,
+.board-files span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Board overlay — on-board fog cues (DESIGN.md). pointer-events: none so the
+   board underneath stays interactive. */
+.board-wrap {
+  position: relative;
+}
+.board-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ov-cell {
+  position: absolute;
+}
+/* Opponent return warning: dashed + pulsing orange ring (square only). */
+.ov-warn::before {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 2px dashed var(--warning);
+}
+.ov-warn::after {
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 3px solid var(--warning);
+  animation: ov-pulse 1.5s ease-out infinite;
+}
+@keyframes ov-pulse {
+  0% {
+    transform: scale(0.65);
+    opacity: 1;
+  }
+  80%,
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+/* Your phased piece: faint cyan ghost of the piece returning here, dashed box +
+   countdown badge — visible only to you. */
+.ov-ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--phase);
+}
+.ov-ghost::before {
+  content: "";
+  position: absolute;
+  inset: 11%;
+  border: 2px dashed var(--phase);
+  border-radius: 9px;
+  background: rgba(39, 194, 216, 0.1);
+}
+.ov-ghost-glyph {
+  opacity: 0.55;
+  line-height: 1;
+}
+.ov-ghost-num {
+  position: absolute;
+  right: 6%;
+  top: 4%;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--phase);
+  border-radius: 999px;
+  width: 17px;
+  height: 17px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Chat (players only) */
+.chat-log {
+  margin-top: 0.5rem;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.chat-msg {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  padding: 0.3rem 0.55rem;
+  border-radius: 9px;
+  background: var(--panel-2);
+  align-self: flex-start;
+  max-width: 85%;
+  overflow-wrap: anywhere;
+}
+.chat-msg.mine {
+  align-self: flex-end;
+  background: color-mix(in srgb, var(--phase) 22%, var(--panel-2));
+}
+.chat-who {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-right: 0.3rem;
+}
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+}
+.chat-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Game screen layout (3 columns). Left rail = gameplay info (phased pieces,
+   moves); center = board with player rows + turn stripe; right rail = chat +
+   discreet tool icons. Each region has a stable footprint so siblings never
+   reflow as content arrives (the old single right-stack reshuffled constantly).
+   --------------------------------------------------------------------------- */
+.game {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+/* Two rows: a header band (Opponent+captured over the board, icons over the chat,
+   empty over the phased panel) and a body band. Splitting it this way aligns the
+   tops of the phased panel, the board, and the chat. */
+.game-grid {
+  display: grid;
+  grid-template-columns: 260px minmax(320px, 1fr) 320px;
+  grid-template-rows: auto auto;
+  column-gap: 1.25rem;
+  row-gap: 0.6rem;
+  align-items: start;
+}
+.col-head {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+.board-head {
+  justify-content: center;
+}
+.board-stack-head {
+  max-width: 100%;
+}
+@media (max-width: 1100px) {
+  .game-grid {
+    grid-template-columns: 1fr;
+  }
+  .head-spacer {
+    display: none;
+  }
+  .board-head {
+    order: 1;
+    justify-content: flex-start;
+  }
+  .board-col {
+    order: 2;
+  }
+  .rail-left {
+    order: 3;
+  }
+  .rail-head {
+    order: 4;
+  }
+  .rail-right {
+    order: 5;
+  }
+}
+.rail {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+  min-width: 0;
+}
+
+/* Center board column */
+.board-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.board-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 100%;
+}
+.board-frame {
+  display: grid;
+}
+/* Player identity rows flanking the board. The side-to-move row brightens and
+   shows a "● to move" tag (a label, not color alone). padding-left = GUTTER
+   (22px) aligns the row content with the board's left edge. */
+.player-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-left: 22px;
+  min-height: 30px;
+}
+.player-row .who {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  min-width: 92px;
+}
+.player-row.to-move .who {
+  color: var(--text);
+}
+.move-dot {
+  color: var(--good);
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-left: 0.35rem;
+  white-space: nowrap;
+}
+
+/* Drag handle to resize the board (bottom-right corner). */
+.resize-handle {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 4;
+  opacity: 0.55;
+  background: linear-gradient(
+    135deg,
+    transparent 0 55%,
+    var(--muted) 55% 64%,
+    transparent 64% 76%,
+    var(--muted) 76% 85%,
+    transparent 85%
+  );
+}
+.resize-handle:hover {
+  opacity: 1;
+}
+.phase-hint {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* On-board phase dialog (right-click). Fixed width; the label and button never
+   wrap, so the box keeps one size as the slider goes 1..n. */
+.phase-pop {
+  position: absolute;
+  z-index: 6;
+  width: 212px;
+  background: var(--panel);
+  border: 1px solid var(--phase);
+  border-radius: 12px;
+  padding: 0.7rem 0.8rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 0.55rem;
+}
+.phase-pop-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.phase-slider {
+  width: 100%;
+  accent-color: var(--phase);
+}
+.phase-pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.phase-pop-row .mono,
+.phase-pop-row button {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* Discreet tool icons + popovers (rules, spectator invite) */
+.rail-tools {
+  display: flex;
+  gap: 0.5rem;
+}
+.pop-wrap {
+  position: relative;
+}
+.icon-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  border-radius: 10px;
+  padding: 0;
+}
+.popover {
+  position: absolute;
+  top: 52px;
+  z-index: 20;
+  width: 264px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.popover-left {
+  left: 0;
+}
+.popover-right {
+  right: 0;
+}
+.token-code {
+  font-family: var(--mono);
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+}
+
+/* Fixed footprints so the rails don't reflow */
+.moves-panel .movelog {
+  max-height: 42vh;
+}
+.rail-right .chat-panel {
+  display: flex;
+  flex-direction: column;
+}
+.rail-right .chat-log {
+  height: 48vh;
+  max-height: none;
+}
+.warn-line {
+  margin-top: 0.6rem;
+  color: var(--warning);
+  font-size: 0.9rem;
+}
+
+/* Game-over banner (full width, above the grid) */
+.gameover-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  text-align: center;
+  border-color: var(--accent);
+  margin-bottom: 1rem;
+  padding: 1.2rem;
+}
+.gameover-status {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.gameover-btn {
+  font-size: 1.05rem;
+  padding: 0.6rem 1.5rem;
+}
+
+/* Transient toasts (self-capture notice, errors) — fixed, never reflow rails */
+.toast-area {
+  position: fixed;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 40;
+}
+.toast {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.9rem;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+}
+.toast-danger {
+  border-color: var(--danger);
+}
+
+/* Accessibility baseline (from the audit): visible focus ring, 44px targets,
+   reduced-motion. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+button {
+  min-height: 44px;
+}
+button:focus-visible,
+input:focus-visible,
+.chat-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-warn::after {
+    animation: none;
+  }
 }

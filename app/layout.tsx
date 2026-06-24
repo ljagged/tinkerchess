@@ -3,7 +3,7 @@ import "./globals.css";
 import { ConvexClientProvider } from "./ConvexClientProvider";
 
 export const metadata: Metadata = {
-  title: "Phase Chess",
+  title: "TinkerChess",
   description: "A fog-of-war chess variant where pieces phase out and reappear.",
 };
 
