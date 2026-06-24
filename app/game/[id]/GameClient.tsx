@@ -509,14 +509,14 @@ function IconPopover({
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onDoc = (e: MouseEvent) => {
+    const onDoc = (e: Event) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
     document.addEventListener("keydown", onKey);
     return () => {
-      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("pointerdown", onDoc);
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
@@ -611,6 +611,10 @@ export function GameClient({ gameId }: { gameId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [phaseFrom, setPhaseFrom] = useState<number | null>(null);
   const [phaseDuration, setPhaseDuration] = useState(1);
+  // Tap-to-move (DESIGN.md default): tap a piece to select it, tap a square to
+  // move there. Drag still works as a power-user shortcut. `selected` is the
+  // chosen origin square index (null = nothing selected).
+  const [selected, setSelected] = useState<number | null>(null);
   const [replay, setReplay] = useState<{ id: Id<"matches">; color: "w" | "b" | null } | null>(null);
 
   // Board sizing: the board fills its column up to a user-set max (drag handle,
@@ -618,6 +622,14 @@ export function GameClient({ gameId }: { gameId: string }) {
   // it bigger than before, responsive to the window, and resizable like lichess.
   const [boardMax, setBoardMax] = useState(BOARD_DEFAULT);
   const [availWidth, setAvailWidth] = useState(BOARD_DEFAULT);
+  // Touch/coarse-pointer devices (iPad, phones) have no right-click, so phasing
+  // is offered as a tap instead (see onSquareClick). Detected client-side; false
+  // during SSR so desktop keeps its right-click flow untouched.
+  const [isTouch, setIsTouch] = useState(false);
+  // Viewport width — only used to size the waiting-room board (which renders
+  // before the resize-observed board column exists). Starts at the desktop
+  // default so SSR/first paint is stable.
+  const [viewportW, setViewportW] = useState(BOARD_DEFAULT);
   const roRef = useRef<ResizeObserver | null>(null);
   const setBoardCol = useCallback((el: HTMLDivElement | null) => {
     roRef.current?.disconnect();
@@ -643,6 +655,26 @@ export function GameClient({ gameId }: { gameId: string }) {
     const s = Number(localStorage.getItem("tinkerchess:boardMax"));
     if (s) setBoardMax(Math.min(BOARD_CAP, Math.max(BOARD_MIN, s)));
   }, []);
+
+  // Detect a coarse pointer (touch) so the UI can swap right-click affordances
+  // for taps. Re-checks on change (e.g. iPad with/without a trackpad attached).
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const apply = () => setIsTouch(mq.matches);
+    apply();
+    mq.addEventListener?.("change", apply);
+    return () => mq.removeEventListener?.("change", apply);
+  }, []);
+
+  // Track viewport width for the waiting-room board (see viewportW).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => setViewportW(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
   useEffect(() => {
     localStorage.setItem("tinkerchess:boardMax", String(boardMax));
   }, [boardMax]);
@@ -650,11 +682,11 @@ export function GameClient({ gameId }: { gameId: string }) {
   // While a phase popover is open, a click anywhere off the box cancels it.
   useEffect(() => {
     if (phaseFrom === null) return;
-    const onDown = (e: MouseEvent) => {
+    const onDown = (e: Event) => {
       if (!(e.target as HTMLElement).closest(".phase-pop")) setPhaseFrom(null);
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
   }, [phaseFrom]);
 
   const view = useQuery(
@@ -674,13 +706,16 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   // --- waiting room (before the opponent has joined) ---
   if (view.phase === "waiting") {
+    // Fit the preview board to the viewport (minus the .wrap padding) so it never
+    // overflows on a phone; cap at 460 so it doesn't dominate on desktop.
+    const waitBoard = Math.max(240, Math.min(460, viewportW - 40));
     return (
-      <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
+      <main className="wrap waiting-grid">
         <div>
           <Chessboard
             id="tinkerchess"
             position={position as BoardProps["position"]}
-            boardWidth={460}
+            boardWidth={waitBoard}
             arePiecesDraggable={false}
             customBoardStyle={{ borderRadius: "8px", opacity: 0.85 }}
             customLightSquareStyle={{ backgroundColor: "#c9d2dc" }}
@@ -688,7 +723,7 @@ export function GameClient({ gameId }: { gameId: string }) {
             customPieces={boardPieces}
           />
         </div>
-        <aside style={{ display: "grid", gap: "1rem", minWidth: 260 }}>
+        <aside style={{ display: "grid", gap: "1rem", minWidth: "min(260px, 100%)" }}>
           <div className="panel" style={{ borderColor: "var(--accent)", display: "grid", gap: "0.8rem" }}>
             <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>Waiting for opponent to join…</div>
             {view.role === "initiator" && view.joinToken ? (
@@ -719,15 +754,27 @@ export function GameClient({ gameId }: { gameId: string }) {
   const myTurn =
     view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
-  // Final board width: as big as the column allows, capped by the user's choice.
-  const boardWidth = Math.max(BOARD_MIN, Math.min(boardMax, availWidth - GUTTER - 8));
+  // Final board width: fill the column up to the user's chosen max, but never
+  // exceed what the column actually offers — so on a narrow phone the board
+  // shrinks to fit instead of overflowing (BOARD_MIN is a resize floor, not a
+  // render floor). Keep a small absolute floor only as a last-resort guard.
+  const fitWidth = availWidth - GUTTER - 8;
+  const boardWidth = Math.max(240, Math.min(boardMax, fitWidth));
 
   // --- square highlights. The fog cues (your phased ghost, opponent warning) are
   // drawn by BoardOverlay below as on-board shapes (DESIGN.md). Here we only mark
   // the selected piece. Color is always paired with a shape cue (colorblind-safe).
   const styles: Record<string, CSSProperties> = {};
+  // Tap-to-move selection: only valid while it's your turn and the square still
+  // holds one of your pieces (guards against a stale index across turns/fog).
+  const selValid =
+    selected !== null && myTurn && view.board[selected]?.color === myColor;
+  const selIdx = selValid ? (selected as number) : null;
+  if (selIdx !== null) {
+    styles[idxToSquare(selIdx)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected to move
+  }
   if (phaseFrom !== null) {
-    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected
+    styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // phasing
   }
   // Check indicator: ring the viewer's own king while it is in check (a red border
   // shape paired with the status-line label below — never color alone, DESIGN.md).
@@ -772,43 +819,91 @@ export function GameClient({ gameId }: { gameId: string }) {
   }
 
   // --- handlers ---
-  const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target, piece) => {
-    if (!myTurn || !seat.seatToken) return false;
-    const isPawn = piece[1] === "P";
-    const lastRank = target.endsWith("8") || target.endsWith("1");
-    const promotion = isPawn && lastRank ? ("q" as const) : undefined;
+  // Submit a move from one square index to another. Shared by tap-to-move and
+  // drag. The server validates legality (authoritative under fog), so we only
+  // need to auto-queen a pawn reaching the back rank.
+  const doMove = (from: number, to: number) => {
+    if (!myTurn || !seat.seatToken) return;
+    const p = view.board[from];
+    if (!p) return;
+    const toRank = Math.floor(to / 8); // 0 = rank 1 … 7 = rank 8
+    const lastRank = p.color === "w" ? toRank === 7 : toRank === 0;
+    const promotion = p.type === "p" && lastRank ? ("q" as const) : undefined;
     makeMove({
       gameId: id,
       seatToken: seat.seatToken,
-      from: squareToIdx(source),
-      to: squareToIdx(target),
+      from,
+      to,
       ...(promotion ? { promotion } : {}),
       requestId: crypto.randomUUID(), // reused by Convex on retry -> idempotent
       expectedPly: view.turnsTaken.w + view.turnsTaken.b,
     }).catch((e) => setError(errText(e)));
+  };
+
+  const onPieceDrop: NonNullable<BoardProps["onPieceDrop"]> = (source, target) => {
+    if (!myTurn || !seat.seatToken) return false;
+    setSelected(null); // a drag overrides any tap-selection
+    doMove(squareToIdx(source), squareToIdx(target));
     // Let the authoritative view drive the board; reject the optimistic drop.
     return false;
   };
 
-  // Left-click a square: the only job here is to dismiss an open phase popover
-  // (selecting/moving pieces is drag, phasing is right-click).
-  const onSquareClick: NonNullable<BoardProps["onSquareClick"]> = () => {
-    if (phaseFrom !== null) setPhaseFrom(null);
-  };
-
-  // Right-click your own eligible piece to phase it out (less misfire-prone than
-  // double-click). Opens the on-board slider popover over that square.
-  const onSquareRightClick: NonNullable<BoardProps["onSquareRightClick"]> = (square) => {
-    if (!myTurn || !seat.seatToken) return;
-    const idx = squareToIdx(square);
+  // Is this square one of the viewer's own phase-eligible pieces?
+  const isPhaseEligible = (idx: number) => {
+    if (!myTurn || !seat.seatToken) return false;
     const p = view.board[idx];
     // Phase-eligibility comes from the game's ruleset, not a hardcoded list.
-    if (!p || p.color !== myColor || (view.rules[p.type] ?? 0) === 0) {
+    return !!p && p.color === myColor && (view.rules[p.type] ?? 0) > 0;
+  };
+
+  // Open the phase-duration popover for a square (right-click on desktop, or the
+  // "Phase out" button after selecting a piece on touch).
+  const openPhase = (idx: number) => {
+    if (!isPhaseEligible(idx)) return;
+    setSelected(null);
+    setPhaseFrom(idx);
+    setPhaseDuration(1);
+  };
+
+  // Tap/left-click a square — the DESIGN.md default move interaction. Tap your
+  // piece to select it, tap a destination to move; tap it again to deselect, or
+  // tap another of your pieces to reselect. A tap also dismisses an open popover.
+  const onSquareClick: NonNullable<BoardProps["onSquareClick"]> = (square) => {
+    if (phaseFrom !== null) {
       setPhaseFrom(null);
       return;
     }
-    setPhaseFrom(idx);
-    setPhaseDuration(1);
+    if (!myTurn || !seat.seatToken) {
+      setSelected(null);
+      return;
+    }
+    const idx = squareToIdx(square);
+    if (selected === null) {
+      if (view.board[idx]?.color === myColor) setSelected(idx);
+      return;
+    }
+    if (idx === selected) {
+      setSelected(null);
+      return;
+    }
+    if (view.board[idx]?.color === myColor) {
+      setSelected(idx); // switch selection to the other piece
+      return;
+    }
+    doMove(selected, idx);
+    setSelected(null);
+  };
+
+  // Right-click your own eligible piece to phase it out (desktop shortcut; touch
+  // uses the visible "Phase out" button below the board).
+  const onSquareRightClick: NonNullable<BoardProps["onSquareRightClick"]> = (square) => {
+    if (!myTurn || !seat.seatToken) return;
+    const idx = squareToIdx(square);
+    if (!isPhaseEligible(idx)) {
+      setPhaseFrom(null);
+      return;
+    }
+    openPhase(idx);
   };
 
   const confirmPhase = async () => {
@@ -859,6 +954,22 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   const selectedType = phaseFrom !== null ? view.board[phaseFrom]?.type : undefined;
   const selectedMax = selectedType ? view.rules[selectedType] || 1 : 1;
+
+  // Tap-to-move selection context for the under-board action bar: the selected
+  // piece (if any) and whether it can phase out (drives the "Phase out" button).
+  const selectedPiece = selIdx !== null ? view.board[selIdx] : null;
+  const selectedPhaseable = selIdx !== null && isPhaseEligible(selIdx);
+  const tapWord = isTouch ? "Tap" : "Click";
+  let actionHint: string;
+  if (!myTurn) actionHint = "Waiting for your turn…";
+  else if (selectedPiece)
+    actionHint = selectedPhaseable
+      ? `or ${tapWord.toLowerCase()} a square to move it`
+      : `${tapWord} a square to move it.`;
+  else
+    actionHint = isTouch
+      ? "Tap one of your pieces to move it."
+      : "Click a piece to move it · right-click to phase it out.";
 
   // --- status text ---
   const colorName = (c: "w" | "b") => (c === "w" ? "White" : "Black");
@@ -955,7 +1066,9 @@ export function GameClient({ gameId }: { gameId: string }) {
                   : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
               </div>
               <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-                Right-click a piece to phase it out. It returns to its square after the
+                {isTouch
+                  ? "Tap one of your pieces, then choose Phase out"
+                  : "Right-click a piece to phase it out"}. It returns to its square after the
                 chosen number of your turns, removing whatever sits there. Win by checkmate.
               </div>
             </IconPopover>
@@ -1073,7 +1186,14 @@ export function GameClient({ gameId }: { gameId: string }) {
             </div>
           </div>
           {isPlayer && view.status === "active" && (
-            <p className="phase-hint">Right-click one of your pieces to phase it out.</p>
+            <div className="phase-action">
+              {selectedPhaseable && selectedPiece && (
+                <button className="primary" onClick={() => openPhase(selIdx as number)}>
+                  Phase out {PIECE_NAME[selectedPiece.type]}
+                </button>
+              )}
+              <span className="phase-hint">{actionHint}</span>
+            </div>
           )}
           <span className="sr-only" aria-live="polite">{status}</span>
         </section>

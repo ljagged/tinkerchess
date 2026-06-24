@@ -306,6 +306,9 @@ button:disabled {
    board underneath stays interactive. */
 .board-wrap {
   position: relative;
+  /* Touch: claim drags for piece movement so dragging a piece never pans/zooms
+     the page. Scrolling is still available via the surrounding layout. */
+  touch-action: none;
 }
 .board-overlay {
   position: absolute;
@@ -433,6 +436,30 @@ button:disabled {
   margin: 0 auto;
   padding: 1.5rem 1.25rem 3rem;
 }
+/* Phones: reclaim horizontal space so the board can be as large as possible. */
+@media (max-width: 560px) {
+  .game {
+    padding: 1rem 0.6rem 2.5rem;
+  }
+  .wrap {
+    padding: 1.5rem 0.9rem;
+  }
+}
+
+/* Waiting room: board beside the share-token panel on wide screens, stacked on
+   narrow ones so the preview board and token never fight for width. */
+.waiting-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .waiting-grid {
+    grid-template-columns: 1fr;
+    justify-items: start;
+  }
+}
 /* Two rows: a header band (Opponent+captured over the board, icons over the chat,
    empty over the phased panel) and a body band. Splitting it this way aligns the
    tops of the phased panel, the board, and the chat. */
@@ -554,10 +581,30 @@ button:disabled {
 .resize-handle:hover {
   opacity: 1;
 }
+/* Touch devices fill the column automatically and have no precise drag corner —
+   hide the resize handle so it can't be hit by accident near the corner pieces. */
+@media (pointer: coarse) {
+  .resize-handle {
+    display: none;
+  }
+}
 .phase-hint {
   margin: 0.15rem 0 0;
   color: var(--muted);
   font-size: 0.85rem;
+}
+/* Under-board action bar: the "Phase out" button (shown when a phase-eligible
+   piece is selected) plus a contextual move/phase hint. */
+.phase-action {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.15rem;
+  min-height: 44px;
+}
+.phase-action .phase-hint {
+  margin: 0;
 }
 
 /* On-board phase dialog (right-click). Fixed width; the label and button never
