@@ -175,6 +175,10 @@ export default defineSchema({
     // The chess clock, or absent for an untimed game (see clockV). Starts running
     // when the opponent joins (white's period) and switches sides on each move.
     clock: v.optional(clockV),
+    // The pending server-side timeout check for the running side (scheduled via
+    // ctx.scheduler so a flag falls even if no client is watching). Cancelled and
+    // re-scheduled on each clock switch; absent when no clock is running.
+    timeoutJob: v.optional(v.id("_scheduled_functions")),
     createdAt: v.number(),
   }).index("by_join_token", ["joinToken"]),
 

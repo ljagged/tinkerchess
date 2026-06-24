@@ -1,6 +1,7 @@
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
@@ -178,13 +179,16 @@ export const joinByToken = mutation({
     if (game.opponentToken === null) {
       const opponentToken = crypto.randomUUID();
       const initiatorIsWhite = Math.random() < 0.5;
+      // The game is now active — white moves first, so white's clock starts and we
+      // schedule the server-side flag for white's full time.
+      const started = game.clock ? startClock(game.clock, Date.now()) : undefined;
+      const timeoutJob = started ? await scheduleTimeout(ctx, game._id, started, "w") : undefined;
       await ctx.db.patch("games", game._id, {
         opponentToken,
         whiteToken: initiatorIsWhite ? game.initiatorToken : opponentToken,
         blackToken: initiatorIsWhite ? opponentToken : game.initiatorToken,
         opponentName: sanitizeName(name),
-        // The game is now active — white moves first, so white's clock starts.
-        ...(game.clock ? { clock: startClock(game.clock, Date.now()) } : {}),
+        ...(started ? { clock: started, timeoutJob } : {}),
       });
       return { gameId: game._id, role: "player" as const, seatToken: opponentToken };
     }
@@ -439,12 +443,55 @@ async function actingSeat(
   return { game, color: viewer };
 }
 
+// --- server-side timeout adjudication ---------------------------------------
+// A running clock must flag even if no client is watching (lichess-correct).
+// At each clock switch we schedule a `timeoutCheck` for exactly the running
+// side's remaining time and cancel/replace it on the next move. The check
+// re-validates against live server time, so a stale or early fire is a safe
+// no-op (it can never flag the wrong side).
+
+/** Cancel a game's pending timeout check, if any. Harmless if it already ran
+ * (Convex `cancel` is a no-op for in-progress/completed jobs). */
+async function cancelTimeoutJob(ctx: MutationCtx, game: Doc<"games">): Promise<void> {
+  if (game.timeoutJob) await ctx.scheduler.cancel(game.timeoutJob);
+}
+
+/** Schedule a timeout check at the running side's deadline (`remaining[sideToMove]`
+ * ms out, since their period just started). Returns the job id to store. */
+async function scheduleTimeout(
+  ctx: MutationCtx,
+  gameId: Id<"games">,
+  clock: Clock,
+  sideToMove: "w" | "b",
+): Promise<Id<"_scheduled_functions">> {
+  const delay = Math.max(0, clock.remaining[sideToMove]);
+  return ctx.scheduler.runAfter(delay, internal.games.timeoutCheck, { gameId });
+}
+
+/**
+ * Scheduled timeout check (the server-side flag). Fires at the running side's
+ * deadline; if that side is still to move and genuinely out of time, ends the
+ * game. A stale/early fire (the clock since switched, paused, or the game ended)
+ * is a safe no-op because it re-checks live server time. Internal — only the
+ * scheduler calls it.
+ */
+export const timeoutCheck = internalMutation({
+  args: { gameId: v.id("games") },
+  handler: async (ctx, { gameId }) => {
+    const game = await ctx.db.get("games", gameId);
+    if (!game || !game.clock || game.state.status !== "active") return null;
+    if (!isExpired(game.clock, game.state.turn, Date.now())) return null;
+    await endByTimeout(ctx, game, game.state.turn, "spectator"); // returned view unused
+    return null;
+  },
+});
+
 /**
  * End an active game on time: the side whose clock ran out (`flagged`) loses, the
- * other wins. Pauses the clock, stamps the `timeout` end reason, persists, and
- * returns the fog view for `viewer`. (v1 always awards the win — no
- * insufficient-material draw; in a phase variant "insufficient material" is murky
- * because a phased piece can return. Revisit later.)
+ * other wins. Pauses the clock, cancels the pending timeout job, stamps the
+ * `timeout` end reason, persists, and returns the fog view for `viewer`. (v1 always
+ * awards the win — no insufficient-material draw; in a phase variant "insufficient
+ * material" is murky because a phased piece can return. Revisit later.)
  */
 async function endByTimeout(
   ctx: MutationCtx,
@@ -462,7 +509,12 @@ async function endByTimeout(
   const clock: Clock | undefined = game.clock
     ? { ...game.clock, remaining: { ...game.clock.remaining, [flagged]: 0 }, runningSince: null }
     : undefined;
-  await ctx.db.patch("games", game._id, { state: next, ...(clock ? { clock } : {}) });
+  await cancelTimeoutJob(ctx, game);
+  await ctx.db.patch("games", game._id, {
+    state: next,
+    ...(clock ? { clock } : {}),
+    timeoutJob: undefined, // game over — no pending check
+  });
   return engine.viewFor(next, viewer);
 }
 
@@ -529,10 +581,18 @@ async function commit(
   }
   const { state: next, events } = applied;
   // Switch the clock: deduct the mover's elapsed, add their increment, and start
-  // the opponent's clock — or pause it if this move ended the game.
-  const clockPatch = game.clock
-    ? { clock: applyMoveToClock(game.clock, color, now, next.status !== "active").clock }
-    : {};
+  // the opponent's clock — or pause it if this move ended the game. Re-point the
+  // server-side flag at the new running side (or clear it when the game is over).
+  const clockPatch: { clock?: Clock; timeoutJob?: Id<"_scheduled_functions"> } = {};
+  if (game.clock) {
+    const gameOver = next.status !== "active";
+    const switched = applyMoveToClock(game.clock, color, now, gameOver).clock;
+    clockPatch.clock = switched;
+    await cancelTimeoutJob(ctx, game);
+    clockPatch.timeoutJob = gameOver
+      ? undefined
+      : await scheduleTimeout(ctx, game._id, switched, next.turn);
+  }
   await ctx.db.patch("games", game._id, { state: next, ...clockPatch });
   await ctx.db.insert("moves", {
     gameId: game._id,
@@ -634,7 +694,10 @@ export const newGame = mutation({
       .query("moves")
       .withIndex("by_game_and_ply", (q) => q.eq("gameId", gameId))
       .collect();
-    if (moves.length > 0) {
+    // Archive any game that actually happened: one with moves, OR a finished game
+    // with none (e.g. a flag falls before either side moves). Skip only a fresh,
+    // never-played, still-active game (nothing to record).
+    if (moves.length > 0 || game.state.status !== "active") {
       moves.sort((a, b) => a.ply - b.ply);
       await ctx.db.insert("matches", {
         gameId,
@@ -662,6 +725,10 @@ export const newGame = mutation({
         : (game.clock?.preset ?? "untimed");
     const fresh = newClock(presetId);
     const clock = fresh ? startClock(fresh, Date.now()) : undefined;
+    // Replace the prior game's pending flag: cancel it, then schedule the rematch's
+    // (white to move) if it's timed.
+    await cancelTimeoutJob(ctx, game);
+    const timeoutJob = clock ? await scheduleTimeout(ctx, gameId, clock, "w") : undefined;
 
     const initiatorIsWhite = Math.random() < 0.5;
     await ctx.db.patch("games", gameId, {
@@ -669,8 +736,9 @@ export const newGame = mutation({
       state: engine.createGame(game.state.config),
       whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
       blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
-      // `undefined` clears any prior clock so an untimed rematch is truly untimed.
+      // `undefined` clears any prior clock/job so an untimed rematch is truly untimed.
       clock,
+      timeoutJob,
     });
     // Now safe to clear the live move log (already archived above).
     for (const m of moves) await ctx.db.delete("moves", m._id);
