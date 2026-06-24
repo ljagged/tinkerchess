@@ -97,6 +97,12 @@ npm run typecheck       # root + convex/ TypeScript
 npm run build           # production build
 ```
 
+## Deploying
+
+To stand the game up for playtesting (Vercel + Convex production), see
+[`docs/DEPLOY.md`](./docs/DEPLOY.md). The repo's `vercel.json` already wires the
+Convex deploy into the build.
+
 ## Status
 
 Milestone 1 (polished, deterministic game) is largely complete:
