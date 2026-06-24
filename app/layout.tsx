@@ -16,11 +16,27 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// A small build-identity tag in the corner, so it's always clear which version is
+// running. Version comes from package.json (NEXT_PUBLIC_APP_VERSION); the short
+// commit SHA is appended on Vercel deploys. Both are inlined at build time.
+function VersionBadge() {
+  const version = process.env.NEXT_PUBLIC_APP_VERSION;
+  if (!version) return null;
+  const sha = process.env.NEXT_PUBLIC_COMMIT_SHA;
+  return (
+    <div className="version-badge" aria-hidden>
+      v{version}
+      {sha ? ` · ${sha}` : ""}
+    </div>
+  );
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         <ConvexClientProvider>{children}</ConvexClientProvider>
+        <VersionBadge />
       </body>
     </html>
   );

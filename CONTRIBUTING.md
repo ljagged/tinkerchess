@@ -33,6 +33,28 @@ npm run build     # production build
 
 All three must pass. New behavior needs tests — we err on the side of too many.
 
+## Versioning
+
+The version (in `package.json`, shown in the corner of the running app) follows
+**semantic versioning**. We are **pre-1.0** and stay there until the milestones in
+[`ROADMAP.md`](./ROADMAP.md) are done — **1.0 is the milestone release, not a
+routine bump** — so the leading `0` stays frozen for now.
+
+While pre-1.0, a loose heuristic:
+
+- **New functionality → bump the minor** (`0.MINOR.0`). Usually lands a new
+  functional/acceptance test (`convex/*.test.ts`).
+- **A fix to existing functionality → bump the patch** (`0.x.PATCH`). Usually lands
+  a regression or unit test (`src/engine/*.test.ts`).
+- **Docs / CI / infra only → no version change.**
+
+Examples: the iPad/touch UX was new functionality → **minor**; fixing the
+illegal-move error message was a fix → **patch**.
+
+Bump `package.json` `version` in the same PR as the change. (Post-1.0 we tighten
+this to a test-driven rule: a unit test → patch, a new acceptance test → minor, a
+*modified* acceptance test → major.)
+
 ## Architecture & hard rules
 
 ```

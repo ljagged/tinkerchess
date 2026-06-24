@@ -772,3 +772,19 @@ input:focus-visible,
     animation: none;
   }
 }
+
+/* Build-identity tag, pinned to the bottom-right corner. Muted and
+   non-interactive so it never competes with or blocks the UI. */
+.version-badge {
+  position: fixed;
+  right: 0.5rem;
+  bottom: 0.4rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--muted);
+  opacity: 0.6;
+  pointer-events: none;
+  user-select: none;
+  z-index: 5;
+}
