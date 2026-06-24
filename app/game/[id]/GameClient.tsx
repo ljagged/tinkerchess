@@ -10,6 +10,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { loadSeat, type Seat } from "../../seat";
 import { CopyButton, formatToken } from "../../token";
+import { errText } from "../../errors";
 
 // The engine is intentionally NOT imported here — the server is authoritative
 // and getGameView hands us exactly what we're allowed to see. The client only
@@ -784,7 +785,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       ...(promotion ? { promotion } : {}),
       requestId: crypto.randomUUID(), // reused by Convex on retry -> idempotent
       expectedPly: view.turnsTaken.w + view.turnsTaken.b,
-    }).catch((e) => setError((e as Error).message));
+    }).catch((e) => setError(errText(e)));
     // Let the authoritative view drive the board; reject the optimistic drop.
     return false;
   };
@@ -824,7 +825,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       setError(null);
       setPhaseFrom(null);
     } catch (e) {
-      setError((e as Error).message);
+      setError(errText(e));
     }
   };
 

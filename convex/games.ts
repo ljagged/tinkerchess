@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
 
@@ -84,7 +84,7 @@ function isInitiator(game: Doc<"games">, token: string | undefined): boolean {
 }
 
 function requireGame(game: Doc<"games"> | null): Doc<"games"> {
-  if (!game) throw new Error("game not found");
+  if (!game) throw new ConvexError("Game not found.");
   return game;
 }
 
@@ -155,7 +155,7 @@ export const joinByToken = mutation({
       .query("games")
       .withIndex("by_join_token", (q) => q.eq("joinToken", canonical))
       .unique();
-    if (!game) throw new Error("No game found for that token.");
+    if (!game) throw new ConvexError("No game found for that token.");
 
     if (game.opponentToken === null) {
       const opponentToken = crypto.randomUUID();
@@ -356,7 +356,7 @@ export const sendMessage = mutation({
   handler: async (ctx, { gameId, seatToken, text }) => {
     const game = requireGame(await ctx.db.get("games", gameId));
     const color = viewerFromToken(game, seatToken);
-    if (color === "spectator") throw new Error("only players can chat");
+    if (color === "spectator") throw new ConvexError("Only players can chat.");
     const trimmed = text.trim().slice(0, MAX_MESSAGE_LEN);
     if (!trimmed) return null;
     await ctx.db.insert("messages", { gameId, color, text: trimmed, createdAt: Date.now() });
@@ -392,7 +392,7 @@ async function actingSeat(
 ): Promise<{ game: Doc<"games">; color: "w" | "b" }> {
   const game = requireGame(await ctx.db.get("games", gameId));
   const viewer = viewerFromToken(game, seatToken);
-  if (viewer === "spectator") throw new Error("not a player in this game");
+  if (viewer === "spectator") throw new ConvexError("You are not a player in this game.");
   return { game, color: viewer };
 }
 
@@ -423,14 +423,32 @@ async function commit(
     if (dup) return engine.viewFor(engineState(game), color); // already applied — no-op
   }
 
-  if (game.state.turn !== color) throw new Error("not your turn");
+  if (game.state.turn !== color) throw new ConvexError("It's not your turn.");
 
   const currentPly = game.state.turnsTaken.w + game.state.turnsTaken.b;
   if (expectedPly !== undefined && expectedPly !== currentPly) {
-    throw new Error("Your board is out of sync — it will refresh, then try again.");
+    throw new ConvexError("Your board is out of sync — it'll refresh, then try again.");
   }
 
-  const { state: next, events } = engine.applyActionWithEvents(engineState(game), action); // throws on illegal action
+  // The engine throws on an illegal action. Surface it as a readable ConvexError
+  // (a plain Error reaches the client as a bare "Server Error"). Until the client
+  // highlights legal moves, this is the only feedback for, e.g., a move that
+  // leaves your own king in check.
+  let applied: ReturnType<typeof engine.applyActionWithEvents>;
+  try {
+    applied = engine.applyActionWithEvents(engineState(game), action);
+  } catch (e) {
+    if (e instanceof engine.IllegalActionError) {
+      const inCheck = !engine.kingSafe(engineState(game), color);
+      throw new ConvexError(
+        inCheck
+          ? "You're in check — that move doesn't get your king to safety."
+          : "That move isn't legal.",
+      );
+    }
+    throw e;
+  }
+  const { state: next, events } = applied;
   await ctx.db.patch("games", game._id, { state: next });
   await ctx.db.insert("moves", {
     gameId: game._id,
@@ -500,9 +518,9 @@ export const newGame = mutation({
   handler: async (ctx, { gameId, seatToken }) => {
     const game = requireGame(await ctx.db.get("games", gameId));
     if (viewerFromToken(game, seatToken) === "spectator") {
-      throw new Error("only a player can start a new game");
+      throw new ConvexError("Only a player can start a new game.");
     }
-    if (game.opponentToken === null) throw new Error("game has not started");
+    if (game.opponentToken === null) throw new ConvexError("The game has not started yet.");
 
     // Snapshot the played game into the immutable match archive BEFORE resetting.
     const moves = await ctx.db
