@@ -1,8 +1,9 @@
-// Attack detection. In Phase Chess there is no "check" rule that constrains
-// moves (win is by capturing the king), so attack detection is needed for only
-// two things: the king-may-not-phase-while-in-check gate, and the standard
-// castling constraints. Phased pieces are off `board`, so they never attack —
-// this falls out for free since we only scan `board`.
+// Attack detection. Standard chess check/checkmate applies, so these predicates
+// drive king safety everywhere: the legal-move filter, checkmate/stalemate
+// adjudication, the phase-out-exposure check (S7), and castling constraints.
+// Phased pieces are off `board`, so they never attack — this falls out for free
+// since we only scan `board`. (The enemy imminent-return ring is handled
+// separately as a per-square check, NOT in attack generation — see kingSafe.)
 
 import { fileOf, onBoard, pieceAt, rankOf, squareIndex } from "./board.js";
 import type { Color, GameState, SquareIndex } from "./types.js";

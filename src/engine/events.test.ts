@@ -23,7 +23,6 @@ function emptyState(turn: Color = "w"): GameState {
     board: new Array<Piece | null>(64).fill(null),
     turn,
     status: "active",
-    wonBySelfCapture: false,
     lastEvent: null,
     phased: [],
     castling: { wK: false, wQ: false, bK: false, bQ: false },
@@ -131,21 +130,16 @@ describe("phase-in capture events (resolvePhaseInsWithEvents)", () => {
     expect(state.lastEvent).toEqual({ by: "w", piece: "b", square: sq("a1") });
   });
 
-  it("enemy king -> kingCapture (win)", () => {
-    const { state, events } = returningRook(P("b", "k"));
-    expect(events).toEqual([
-      { kind: "phaseIn", color: "w", piece: "r", to: sq("a1"), capture: { color: "b", type: "k" }, kingCapture: true },
-    ]);
-    expect(state.status).toBe("w_won");
-    expect(state.wonBySelfCapture).toBe(false);
+  it("enemy king on the origin -> throws (S9: unreachable in legal play)", () => {
+    expect(() => returningRook(P("b", "k"))).toThrow();
   });
 
-  it("own king -> kingCapture (footgun loss)", () => {
+  it("own king on the origin -> selfDestruct event, king untouched, no loss", () => {
     const { state, events } = returningRook(P("w", "k"));
     expect(events).toEqual([
-      { kind: "phaseIn", color: "w", piece: "r", to: sq("a1"), capture: { color: "w", type: "k" }, kingCapture: true },
+      { kind: "phaseIn", color: "w", piece: "r", to: sq("a1"), selfDestruct: true },
     ]);
-    expect(state.status).toBe("b_won");
-    expect(state.wonBySelfCapture).toBe(true);
+    expect(state.board[sq("a1")]).toEqual(P("w", "k")); // the king stands
+    expect(state.status).toBe("active"); // not a loss
   });
 });

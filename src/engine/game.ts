@@ -1,32 +1,36 @@
-// Top-level game orchestration: applying actions in turn order, and producing
-// the per-viewer (fog-of-war) view.
+// Top-level game orchestration: applying actions in turn order, adjudicating
+// standard checkmate / stalemate / threefold-repetition, and producing the
+// per-viewer (fog-of-war) view.
 //
 // Turn lifecycle for each action:
 //   1. The side to move applies a move or a phase-out (board mechanics).
-//   2. If that captured the enemy king, the game ends here.
-//   3. Otherwise the mover's turn counter increments and any of the MOVER's due
-//      pieces phase back in — at the END of their turn (which may itself end the
-//      game by removing a king).
-//   4. The turn flips to the opponent.
+//   2. The mover's turn counter increments and any of the MOVER's due pieces
+//      phase back in — at the END of their turn (S5 table; never ends the game).
+//   3. The turn flips to the opponent, and the position the opponent faces is
+//      adjudicated: checkmate (opponent loses), stalemate (draw), or threefold
+//      repetition (draw). No king is ever captured/removed (S9).
 //
 // Phase-in resolves at the END of the owner's turn (not the start) so the owner
 // gets to play the turn with the piece still out and exploit the open space.
 // A piece phased for duration d is therefore absent across d of the owner's own
-// turns and reappears at the end of the d-th one. (Resolving at the start would
-// make a duration of 1 pointless — the piece would return before the owner moved.)
+// turns and reappears at the end of the d-th one. The enemy-imminent-return ring
+// is treated as a check on a king occupying that square (S5a), evaluated in this
+// same adjudication, so an enemy return never fires against a live king.
 
-import { cloneState, initialState, pieceAt } from "./board.js";
-import { applyMove, deriveMoveEvent, generateMoves, isLegalMove } from "./moves.js";
+import { cloneState, initialState, pieceAt, positionKey } from "./board.js";
+import { applyMove, deriveMoveEvent, legalMovesFrom, isLegalMove } from "./moves.js";
 import {
   ownPhased,
   resolvePhaseInsWithEvents,
   applyPhaseOut,
   derivePhaseOutEvent,
+  kingSafe,
   warningSquaresFor,
 } from "./phase.js";
 import type {
   Action,
   Color,
+  EndReason,
   GameEvent,
   GameState,
   GameStatus,
@@ -70,7 +74,7 @@ export function applyActionWithEvents(
       throw new IllegalActionError("illegal move");
     }
     next = applyMove(state, action.move);
-    events.push(deriveMoveEvent(state, action.move, next));
+    events.push(deriveMoveEvent(state, action.move));
   } else {
     next = applyPhaseOut(state, action.phaseOut); // validates internally, throws if illegal
     events.push(derivePhaseOutEvent(state, action.phaseOut)); // derive from untouched pre-state
@@ -79,18 +83,73 @@ export function applyActionWithEvents(
   // The self-capture notice reflects only the action just applied.
   next.lastEvent = null;
 
-  // The action itself may have ended the game (king captured).
   next.turnsTaken[mover] += 1;
-  if (next.status !== "active") return { state: next, events };
 
-  // End-of-turn phase-ins for the mover (may end the game by removing a king).
+  // End-of-turn phase-ins for the mover (S5 table; never ends the game).
   const resolved = resolvePhaseInsWithEvents(next, mover);
   next = resolved.state;
   events.push(...resolved.events);
-  if (next.status !== "active") return { state: next, events };
 
+  // Pass to the opponent and adjudicate the position they now face.
   next.turn = mover === "w" ? "b" : "w";
+  adjudicate(next, events);
   return { state: next, events };
+}
+
+/**
+ * Adjudicate the position the side to move faces, mutating `state` in place:
+ * checkmate (the side to move loses), stalemate (draw), or threefold repetition
+ * (draw). Stalemate/checkmate use ONLY the current visible board and count legal
+ * MOVES only — a legal phase-out never averts a draw. The deciding event is
+ * stamped with check (+) / checkmate (#) for notation.
+ */
+function adjudicate(state: GameState, events: GameEvent[]): void {
+  const toMove = state.turn;
+
+  // Record the position the side to move faces, for threefold repetition. The key
+  // excludes phase timers (see positionKey), so phasing can't dodge a repetition.
+  const history = (state.history ??= []);
+  const key = positionKey(state);
+  history.push(key);
+
+  const inCheck = !kingSafe(state, toMove);
+  const hasMove = legalMoves(state).length > 0;
+
+  if (!hasMove) {
+    if (inCheck) {
+      state.status = toMove === "w" ? "b_won" : "w_won"; // checkmate: side to move loses
+      state.endReason = "checkmate";
+      stampDecidingEvent(events, "checkmate");
+    } else {
+      state.status = "draw";
+      state.endReason = "stalemate";
+    }
+    return;
+  }
+
+  // Threefold repetition -> automatic draw (Lichess-style; no claim action).
+  if (history.filter((k) => k === key).length >= 3) {
+    state.status = "draw";
+    state.endReason = "repetition";
+    return;
+  }
+
+  // Game continues: mark the deciding event as a check if the opponent is in one.
+  if (inCheck) stampDecidingEvent(events, "check");
+}
+
+/**
+ * Stamp the turn's deciding (last) event with check / checkmate, for notation.
+ * Only move and phaseIn events carry these flags; a phase-out that delivers a
+ * discovered check is not marked (a rare, cosmetic-only gap).
+ */
+function stampDecidingEvent(events: GameEvent[], kind: "check" | "checkmate"): void {
+  const last = events[events.length - 1];
+  if (!last) return;
+  if (last.kind === "move" || last.kind === "phaseIn") {
+    if (kind === "checkmate") last.checkmate = true;
+    else last.check = true;
+  }
 }
 
 /**
@@ -120,13 +179,15 @@ export function replay(actions: Action[], from: GameState = createGame()): GameS
   return state;
 }
 
-/** All legal moves for the side to move (for UI highlighting / tests). */
+/** All fully-legal (king-safe) moves for the side to move (UI highlighting,
+ * adjudication, tests). Excludes phase-outs — they are not "moves" for
+ * checkmate/stalemate purposes. */
 export function legalMoves(state: GameState): Move[] {
   if (state.status !== "active") return [];
   const moves: Move[] = [];
   for (let sq = 0; sq < 64; sq++) {
     const p = pieceAt(state.board, sq);
-    if (p && p.color === state.turn) moves.push(...generateMoves(state, sq));
+    if (p && p.color === state.turn) moves.push(...legalMovesFrom(state, sq));
   }
   return moves;
 }
@@ -149,8 +210,14 @@ export interface GameView {
   board: (Piece | null)[];
   turn: Color;
   status: GameStatus;
-  /** When the game is over, whether the loser captured their own king. */
-  wonBySelfCapture: boolean;
+  /** Why the game ended (checkmate / stalemate / repetition), or undefined while active. */
+  endReason?: EndReason;
+  /**
+   * Whether the VIEWER's own king is in check — standard attack OR an enemy
+   * imminent-return ring on the king's square (per the viewer's fog). False for
+   * spectators (they have no ring visibility). Drives the check indicator.
+   */
+  inCheck: boolean;
   /** Most recent non-terminal self-capture (visible to all), or null. */
   lastEvent: SelfCaptureEvent | null;
   /** Permanently captured pieces per color (the captured piece's color). */
@@ -179,7 +246,8 @@ export function viewFor(state: GameState, viewer: Viewer): GameView {
     board: state.board.slice(),
     turn: state.turn,
     status: state.status,
-    wonBySelfCapture: state.wonBySelfCapture,
+    endReason: state.endReason,
+    inCheck: isPlayer ? !kingSafe(state, viewer) : false,
     lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
     captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
     turnsTaken: { ...state.turnsTaken },
@@ -217,7 +285,7 @@ export interface RevealView {
   board: (Piece | null)[];
   turn: Color;
   status: GameStatus;
-  wonBySelfCapture: boolean;
+  endReason?: EndReason;
   lastEvent: SelfCaptureEvent | null;
   captured: { w: Piece["type"][]; b: Piece["type"][] };
   turnsTaken: { w: number; b: number };
@@ -230,7 +298,7 @@ export function revealView(state: GameState): RevealView {
     board: state.board.slice(),
     turn: state.turn,
     status: state.status,
-    wonBySelfCapture: state.wonBySelfCapture,
+    endReason: state.endReason,
     lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
     captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
     turnsTaken: { ...state.turnsTaken },

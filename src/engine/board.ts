@@ -45,6 +45,27 @@ function emptyBoard(): (Piece | null)[] {
   return new Array<Piece | null>(64).fill(null);
 }
 
+/**
+ * A compact key identifying a position for threefold-repetition: the in-play
+ * board, side to move, castling rights, and en-passant target. Phased pieces are
+ * absent from `board` and their return timers are deliberately excluded, so
+ * phasing never changes the key beyond the pieces actually on the board (you
+ * cannot phase to manufacture a "new" position and dodge a repetition draw).
+ * White pieces are uppercase, black lowercase, empty squares ".".
+ */
+export function positionKey(state: GameState): string {
+  let board = "";
+  for (let sq = 0; sq < 64; sq++) {
+    const p = state.board[sq];
+    board += p ? (p.color === "w" ? p.type.toUpperCase() : p.type) : ".";
+  }
+  const c = state.castling;
+  const castle =
+    `${c.wK ? "K" : ""}${c.wQ ? "Q" : ""}${c.bK ? "k" : ""}${c.bQ ? "q" : ""}` || "-";
+  const ep = state.enPassant === null ? "-" : String(state.enPassant);
+  return `${board}|${state.turn}|${castle}|${ep}`;
+}
+
 const BACK_RANK: Piece["type"][] = ["r", "n", "b", "q", "k", "b", "n", "r"];
 
 function cloneConfig(config: RuleConfig): RuleConfig {
@@ -64,19 +85,22 @@ export function initialState(config: RuleConfig = DEFAULT_RULE_CONFIG): GameStat
     board[squareIndex(file, 6)] = { color: "b", type: "p" };
     board[squareIndex(file, 7)] = { color: "b", type: BACK_RANK[file]! };
   }
-  return {
+  const state: GameState = {
     board,
     config: cloneConfig(config),
     turn: "w",
     status: "active",
-    wonBySelfCapture: false,
     lastEvent: null,
     phased: [],
     castling: { wK: true, wQ: true, bK: true, bQ: true },
     enPassant: null,
     turnsTaken: { w: 0, b: 0 },
     captured: { w: [], b: [] },
+    history: [],
   };
+  // Seed the repetition history with the starting position (occurrence 1).
+  state.history = [positionKey(state)];
+  return state;
 }
 
 export function cloneState(state: GameState): GameState {
@@ -87,13 +111,14 @@ export function cloneState(state: GameState): GameState {
     config: state.config ? cloneConfig(state.config) : undefined,
     turn: state.turn,
     status: state.status,
-    wonBySelfCapture: state.wonBySelfCapture,
+    endReason: state.endReason,
     lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
     phased: state.phased.map((p) => ({ ...p })),
     castling: { ...state.castling },
     enPassant: state.enPassant,
     turnsTaken: { ...state.turnsTaken },
     captured: { w: state.captured.w.slice(), b: state.captured.b.slice() },
+    history: state.history ? state.history.slice() : undefined,
   };
 }
 

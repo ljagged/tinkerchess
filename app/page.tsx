@@ -8,7 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { clearPending, loadPending, loadSeat, savePending, saveSeat } from "./seat";
 import { ChunkedTokenInput, CopyButton, formatToken } from "./token";
 
-const NAME_KEY = "phasechess:name";
+const NAME_KEY = "tinkerchess:name";
 const MAX_NAME = 24;
 
 export default function Home() {
@@ -128,7 +128,7 @@ export default function Home() {
     const code = pendingView.joinToken ? formatToken(pendingView.joinToken) : "";
     return (
       <main className="wrap">
-        <h1 style={{ marginBottom: "0.25rem" }}>Phase Chess</h1>
+        <h1 style={{ marginBottom: "0.25rem" }}>TinkerChess</h1>
         <div className="panel" style={{ marginTop: "1.5rem", maxWidth: 460, display: "grid", gap: "0.9rem", borderColor: "var(--accent)" }}>
           <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>Waiting for opponent to join…</div>
           <div className="muted">Share this token with your opponent:</div>
@@ -151,7 +151,7 @@ export default function Home() {
 
   return (
     <main className="wrap">
-      <h1 style={{ marginBottom: "0.25rem" }}>Phase Chess</h1>
+      <h1 style={{ marginBottom: "0.25rem" }}>TinkerChess</h1>
       <p className="muted" style={{ marginTop: 0, maxWidth: 620 }}>
         A fog-of-war chess variant. Any non-pawn piece can <strong>phase out</strong> — leave
         the board for a few turns and reappear on its square, removing whatever sits there

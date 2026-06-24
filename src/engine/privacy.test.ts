@@ -52,10 +52,16 @@ function checkInvariant(state: GameState): void {
     expect([...view.warningSquares].sort((a, b) => a - b)).toEqual(expectedWarnings);
 
     // No leak beyond the one-turn warning: an opponent piece returning later must
-    // NOT have its origin exposed anywhere in the view.
+    // NOT have its origin exposed FOR ITS OWN SAKE. A square may legitimately be
+    // exposed for another reason — an imminent opponent return there, or one of the
+    // viewer's OWN phased pieces sharing that origin square (origins can coincide
+    // transiently). Those are not leaks; only an otherwise-hidden square would be.
     const exposed = new Set<number>([...view.warningSquares, ...view.yourPhased.map((p) => p.origin)]);
+    const legitimate = new Set<number>([...expectedWarnings, ...myOrigins]);
     for (const p of oppPhased) {
-      if (p.returnOn > state.turnsTaken[opp] + 1) expect(exposed.has(p.origin)).toBe(false);
+      if (p.returnOn > state.turnsTaken[opp] + 1 && !legitimate.has(p.origin)) {
+        expect(exposed.has(p.origin)).toBe(false);
+      }
     }
   }
 }

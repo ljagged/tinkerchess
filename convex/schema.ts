@@ -30,6 +30,13 @@ export const selfCaptureEventV = v.object({
   square: v.number(),
 });
 
+// Why a finished game ended (mirrors the engine EndReason). Absent while active.
+export const endReasonV = v.union(
+  v.literal("checkmate"),
+  v.literal("stalemate"),
+  v.literal("repetition"),
+);
+
 // Per-game ruleset (Tier-1 Settings). Single source for phase-eligibility +
 // duration caps; 0 means that piece type cannot phase. Optional for back-compat
 // with games stored before configs existed (the engine defaults absence).
@@ -49,10 +56,14 @@ export const gameStateV = v.object({
   // Optional for back-compat; engine.createGame() always sets it on new games.
   config: v.optional(ruleConfigV),
   turn: colorV,
-  status: v.union(v.literal("active"), v.literal("w_won"), v.literal("b_won")),
-  // Optional for backward compatibility with games created before these fields
-  // existed; the engine always sets them on new/updated states.
-  wonBySelfCapture: v.optional(v.boolean()),
+  status: v.union(
+    v.literal("active"),
+    v.literal("w_won"),
+    v.literal("b_won"),
+    v.literal("draw"),
+  ),
+  // Why a finished game ended; absent while active.
+  endReason: v.optional(endReasonV),
   lastEvent: v.optional(v.union(selfCaptureEventV, v.null())),
   phased: v.array(phasedPieceV),
   castling: v.object({
@@ -65,6 +76,9 @@ export const gameStateV = v.object({
   turnsTaken: v.object({ w: v.number(), b: v.number() }),
   // Optional for back-compat; the engine always sets it on new/updated states.
   captured: v.optional(v.object({ w: v.array(pieceTypeV), b: v.array(pieceTypeV) })),
+  // Position keys for threefold-repetition (one per position reached). Optional
+  // for back-compat; the engine seeds it on new games.
+  history: v.optional(v.array(v.string())),
 });
 
 // Derived event log (what an action actually did, all consequences resolved).
@@ -85,7 +99,7 @@ export const gameEventV = v.union(
     castle: v.optional(v.union(v.literal("K"), v.literal("Q"))),
     promotion: v.optional(promotionTypeV),
     check: v.optional(v.literal(true)),
-    kingCapture: v.optional(v.literal(true)),
+    checkmate: v.optional(v.literal(true)),
   }),
   v.object({
     kind: v.literal("phaseOut"),
@@ -102,7 +116,9 @@ export const gameEventV = v.union(
     to: v.number(),
     capture: v.optional(captureV),
     selfCapture: v.optional(v.literal(true)),
-    kingCapture: v.optional(v.literal(true)),
+    selfDestruct: v.optional(v.literal(true)),
+    check: v.optional(v.literal(true)),
+    checkmate: v.optional(v.literal(true)),
   }),
 );
 
@@ -167,8 +183,14 @@ export default defineSchema({
   matches: defineTable({
     gameId: v.id("games"),
     endedAt: v.number(),
-    status: v.union(v.literal("active"), v.literal("w_won"), v.literal("b_won")),
-    wonBySelfCapture: v.boolean(),
+    status: v.union(
+      v.literal("active"),
+      v.literal("w_won"),
+      v.literal("b_won"),
+      v.literal("draw"),
+    ),
+    // Why the archived game ended; absent if it was archived mid-game (rematch).
+    endReason: v.optional(endReasonV),
     config: v.optional(ruleConfigV),
     whiteToken: v.union(v.string(), v.null()),
     blackToken: v.union(v.string(), v.null()),

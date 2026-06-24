@@ -5,13 +5,13 @@
 //   - letters (default): SAN-style — "Nf3", "exd5", "O-O", "a8=Q"
 //   - figurine: Unicode piece glyphs — "♘f3", "♗f1~3"
 //
-// Phase Chess extensions to SAN (arrows read as the piece leaving / returning to
+// TinkerChess extensions to SAN (arrows read as the piece leaving / returning to
 // the board; ↑ = out, ↓ = back in):
-//   - phase-out:  <piece><from>↑<duration>     e.g. "Bf1↑3"  (bishop on f1 phases 3)
-//   - phase-in:   <piece>↓<square>[x<piece>]   e.g. "R↓a1"  /  "R↓a1xN"
-//   - king capture (the win condition, no checkmate): trailing "#"
-//   - check: trailing "+"
-//   - self-capture (a footgun): trailing "(self)"
+//   - phase-out:   <piece><from>↑<duration>     e.g. "Bf1↑3"  (bishop on f1 phases 3)
+//   - phase-in:    <piece>↓<square>[x<piece>]   e.g. "R↓a1"  /  "R↓a1xN"
+//   - checkmate (standard win): trailing "#"; check: trailing "+"
+//   - self-capture (a footgun, own non-king piece destroyed): trailing "(self)"
+//   - self-destruct (a return landed on its own king; piece lost): trailing "(lost)"
 //
 // NOTE: piece-move disambiguation (e.g. "Nbd2") needs full board context, which a
 // single event lacks. Notation is paired with the visual board (each log entry
@@ -51,11 +51,14 @@ export function toNotation(event: GameEvent, opts: NotationOptions = {}): string
   }
 
   if (event.kind === "phaseIn") {
-    let s = `${pieceSym(event.piece, event.color, fig)}↓${toAlgebraic(event.to)}`;
+    const base = `${pieceSym(event.piece, event.color, fig)}↓${toAlgebraic(event.to)}`;
+    // The return landed on its owner's own king: the returning piece is lost.
+    if (event.selfDestruct) return `${base}(lost)`;
+    let s = base;
     if (event.capture) s += `x${capturedSym(event.capture.type, event.capture.color, fig)}`;
-    if (event.kingCapture) s += "#";
-    const selfKing = !!event.kingCapture && event.capture?.color === event.color;
-    if (event.selfCapture || selfKing) s += "(self)";
+    if (event.selfCapture) s += "(self)";
+    if (event.checkmate) s += "#";
+    else if (event.check) s += "+";
     return s;
   }
 
@@ -70,7 +73,7 @@ export function toNotation(event: GameEvent, opts: NotationOptions = {}): string
   } else {
     s = `${pieceSym(event.piece, event.color, fig)}${event.capture ? "x" : ""}${toAlgebraic(event.to)}`;
   }
-  if (event.kingCapture) s += "#";
+  if (event.checkmate) s += "#";
   else if (event.check) s += "+";
   return s;
 }

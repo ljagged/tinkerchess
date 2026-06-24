@@ -1,4 +1,4 @@
-// Core types for the Phase Chess rules engine.
+// Core types for the TinkerChess rules engine.
 //
 // The engine is pure and headless: every function takes a GameState and returns
 // data or a new GameState. No I/O, no randomness, no hidden mutation of inputs.
@@ -45,7 +45,14 @@ export interface CastlingRights {
   bQ: boolean; // black queenside
 }
 
-export type GameStatus = "active" | "w_won" | "b_won";
+export type GameStatus = "active" | "w_won" | "b_won" | "draw";
+
+/**
+ * Why a finished game ended. Absent while the game is active. A win
+ * (`w_won`/`b_won`) is always by `"checkmate"`; a `"draw"` is by `"stalemate"` or
+ * threefold `"repetition"`.
+ */
+export type EndReason = "checkmate" | "stalemate" | "repetition";
 
 /** A non-terminal "footgun": a phase-in removed one of the owner's OWN pieces. */
 export interface SelfCaptureEvent {
@@ -77,11 +84,8 @@ export interface GameState {
   /** Whose turn it is to act. */
   turn: Color;
   status: GameStatus;
-  /**
-   * True when the game ended because the losing side captured their OWN king
-   * (a phase-in landing on it) rather than the winner capturing it.
-   */
-  wonBySelfCapture: boolean;
+  /** Why the game ended (checkmate / stalemate / repetition). Absent while active. */
+  endReason?: EndReason;
   /**
    * The most recent non-terminal self-capture, or null. Reflects only the most
    * recently applied action (cleared each turn). Used to surface "X captured
@@ -101,6 +105,15 @@ export interface GameState {
    * they never appear here — so this reveals nothing about return timers.
    */
   captured: { w: PieceType[]; b: PieceType[] };
+  /**
+   * Position keys seen so far (one per position reached, including the start), for
+   * threefold-repetition detection. The key is the visible board + side-to-move +
+   * castling + en-passant only (see `positionKey`): phased pieces are absent from
+   * the board and their timers are excluded, so phasing can never manufacture a
+   * "new" position to dodge a repetition draw. Optional for back-compat; absence
+   * is treated as an empty history.
+   */
+  history?: string[];
 }
 
 /** A normal chess move. `promotion` is required only when a pawn reaches the last rank. */
@@ -147,8 +160,8 @@ export type GameEvent =
       promotion?: Exclude<PieceType, "p" | "k">;
       /** The move gives check to the opponent. */
       check?: true;
-      /** The move captured a king (game-ending). */
-      kingCapture?: true;
+      /** The move delivered checkmate (set during adjudication). Renders as "#". */
+      checkmate?: true;
     }
   | {
       kind: "phaseOut";
@@ -164,12 +177,20 @@ export type GameEvent =
       piece: PieceType;
       /** Origin square the piece returns to. */
       to: SquareIndex;
-      /** The occupant destroyed on return (any color), if any. */
+      /** The occupant destroyed on return (the returning piece's new square), if any. */
       capture?: { color: Color; type: PieceType };
-      /** The destroyed occupant was the owner's own (non-king) piece. */
+      /** The destroyed occupant was the owner's own (non-king) piece (footgun). */
       selfCapture?: true;
-      /** The return destroyed a king (game-ending). */
-      kingCapture?: true;
+      /**
+       * The origin square held the owner's OWN king: the returning piece
+       * self-destructs and the king is unaffected (kings are immune to friendly
+       * fire). No capture is recorded; the king stays.
+       */
+      selfDestruct?: true;
+      /** The return gives check to the opponent (set during adjudication). Renders as "+". */
+      check?: true;
+      /** The return delivered checkmate (set during adjudication). Renders as "#". */
+      checkmate?: true;
     };
 
 /** Maximum phase-out duration per piece type, in the owner's own turns. */

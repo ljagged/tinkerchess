@@ -234,10 +234,12 @@ type MatchSummary = NonNullable<FunctionReturnType<typeof api.games.getMatchHist
 
 function matchResultText(m: MatchSummary): string {
   if (m.status === "active") return "Unfinished";
+  if (m.status === "draw") {
+    return m.endReason === "repetition" ? "Draw (repetition)" : "Draw (stalemate)";
+  }
   const winner = m.status === "w_won" ? "w" : "b";
-  const sc = m.wonBySelfCapture ? " (self-capture)" : "";
-  if (m.yourColor) return (m.yourColor === winner ? "You won" : "You lost") + sc;
-  return (winner === "w" ? "White won" : "Black won") + sc;
+  if (m.yourColor) return m.yourColor === winner ? "You won" : "You lost";
+  return winner === "w" ? "White won" : "Black won";
 }
 
 /** Past finished games for this game's seats. Self-hides when there are none. */
@@ -347,7 +349,7 @@ function ReplayOverlay({
           <>
             <div style={{ width: REPLAY_BOARD, margin: "0 auto" }}>
               <Chessboard
-                id="phase-chess-replay"
+                id="tinkerchess-replay"
                 position={position as BoardProps["position"]}
                 boardWidth={REPLAY_BOARD}
                 boardOrientation={perspective === "b" ? "black" : "white"}
@@ -637,11 +639,11 @@ export function GameClient({ gameId }: { gameId: string }) {
 
   // Restore the saved board size, then persist any change (incl. drag).
   useEffect(() => {
-    const s = Number(localStorage.getItem("phasechess:boardMax"));
+    const s = Number(localStorage.getItem("tinkerchess:boardMax"));
     if (s) setBoardMax(Math.min(BOARD_CAP, Math.max(BOARD_MIN, s)));
   }, []);
   useEffect(() => {
-    localStorage.setItem("phasechess:boardMax", String(boardMax));
+    localStorage.setItem("tinkerchess:boardMax", String(boardMax));
   }, [boardMax]);
 
   // While a phase popover is open, a click anywhere off the box cancels it.
@@ -675,7 +677,7 @@ export function GameClient({ gameId }: { gameId: string }) {
       <main className="wrap" style={{ display: "grid", gap: "1.25rem", gridTemplateColumns: "auto 1fr", alignItems: "start" }}>
         <div>
           <Chessboard
-            id="phase-chess"
+            id="tinkerchess"
             position={position as BoardProps["position"]}
             boardWidth={460}
             arePiecesDraggable={false}
@@ -725,6 +727,17 @@ export function GameClient({ gameId }: { gameId: string }) {
   const styles: Record<string, CSSProperties> = {};
   if (phaseFrom !== null) {
     styles[idxToSquare(phaseFrom)] = { boxShadow: "inset 0 0 0 5px #d9e2ec" }; // selected
+  }
+  // Check indicator: ring the viewer's own king while it is in check (a red border
+  // shape paired with the status-line label below — never color alone, DESIGN.md).
+  const myKingSq = isPlayer
+    ? view.board.findIndex((p) => p?.color === myColor && p?.type === "k")
+    : -1;
+  // A ringed check (an enemy piece is returning onto the king's square) reads
+  // differently from a standard check: it can only be answered by king flight.
+  const ringedCheck = view.inCheck && myKingSq >= 0 && view.warningSquares.includes(myKingSq);
+  if (view.inCheck && myKingSq >= 0) {
+    styles[idxToSquare(myKingSq)] = { boxShadow: "inset 0 0 0 5px var(--danger)" };
   }
 
   // Coordinate gutters (DESIGN.md) — labels outside the board, orientation-aware.
@@ -850,28 +863,27 @@ export function GameClient({ gameId }: { gameId: string }) {
   const colorName = (c: "w" | "b") => (c === "w" ? "White" : "Black");
   let status: string;
   if (view.status === "active") {
-    status = myTurn
-      ? "Your move"
-      : isPlayer
-        ? "Opponent's move"
-        : `${colorName(view.turn)} to move`;
+    if (myTurn && view.inCheck) {
+      status = ringedCheck
+        ? "Your king must move — a piece is returning onto it"
+        : "You are in check — you must move";
+    } else {
+      status = myTurn
+        ? "Your move"
+        : isPlayer
+          ? "Opponent's move"
+          : `${colorName(view.turn)} to move`;
+    }
+  } else if (view.status === "draw") {
+    status = view.endReason === "repetition" ? "Draw by repetition." : "Draw by stalemate.";
   } else {
     const winner = view.status === "w_won" ? "w" : "b";
-    const loser = winner === "w" ? "b" : "w";
     const youWon = isPlayer && myColor === winner;
-    if (view.wonBySelfCapture) {
-      status = isPlayer
-        ? youWon
-          ? `${colorName(loser)} captured their own king — you win!`
-          : "You captured your own king — you lose."
-        : `${colorName(loser)} captured their own king — ${colorName(winner)} wins.`;
-    } else {
-      status = isPlayer
-        ? youWon
-          ? "You captured the king — you win!"
-          : "Your king was captured — you lose."
-        : `${colorName(winner)} won.`;
-    }
+    status = isPlayer
+      ? youWon
+        ? "Checkmate — you win!"
+        : "Checkmate — you lose."
+      : `Checkmate — ${colorName(winner)} wins.`;
   }
 
   // --- non-terminal self-capture notice ("X captured their own rook") ---
@@ -1000,7 +1012,7 @@ export function GameClient({ gameId }: { gameId: string }) {
               </div>
               <div className="board-wrap" style={{ width: boardWidth, height: boardWidth }}>
                 <Chessboard
-                  id="phase-chess"
+                  id="tinkerchess"
                   position={position as BoardProps["position"]}
                   boardWidth={boardWidth}
                   boardOrientation={orient}

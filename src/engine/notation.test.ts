@@ -44,10 +44,13 @@ describe("toNotation — moves", () => {
     ).toBe("bxa8=Q");
   });
 
-  it("king capture is the win marker (#)", () => {
+  it("checkmate renders # and check renders +", () => {
     expect(
-      toNotation({ kind: "move", color: "w", piece: "q", from: sq("h5"), to: sq("e8"), capture: { color: "b", type: "k" }, kingCapture: true }),
-    ).toBe("Qxe8#");
+      toNotation({ kind: "move", color: "w", piece: "q", from: sq("h5"), to: sq("e2"), checkmate: true }),
+    ).toBe("Qe2#");
+    expect(
+      toNotation({ kind: "move", color: "w", piece: "q", from: sq("d1"), to: sq("h5"), check: true }),
+    ).toBe("Qh5+");
   });
 });
 
@@ -57,7 +60,7 @@ describe("toNotation — phase events", () => {
     expect(toNotation({ kind: "phaseOut", color: "b", piece: "b", from: sq("f8"), duration: 2, returnOn: 3 }, fig)).toBe("♝f8↑2");
   });
 
-  it("phase-in: plain, enemy capture, self-capture, king capture", () => {
+  it("phase-in: plain, enemy capture, self-capture, checkmate, self-destruct", () => {
     expect(toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("a1") })).toBe("R↓a1");
     expect(toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("a1") }, fig)).toBe("♖↓a1");
     expect(
@@ -69,13 +72,14 @@ describe("toNotation — phase events", () => {
     expect(
       toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("a1"), capture: { color: "w", type: "b" }, selfCapture: true }),
     ).toBe("R↓a1xB(self)");
+    // a return that delivers checkmate -> trailing #
     expect(
-      toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("e8"), capture: { color: "b", type: "k" }, kingCapture: true }),
-    ).toBe("R↓e8xK#");
-    // own-king footgun: king capture of one's own color -> # and (self)
+      toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("e8"), capture: { color: "b", type: "n" }, checkmate: true }),
+    ).toBe("R↓e8xN#");
+    // a return onto one's OWN king: the returning piece self-destructs -> (lost)
     expect(
-      toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("e1"), capture: { color: "w", type: "k" }, kingCapture: true }),
-    ).toBe("R↓e1xK#(self)");
+      toNotation({ kind: "phaseIn", color: "w", piece: "r", to: sq("e1"), selfDestruct: true }),
+    ).toBe("R↓e1(lost)");
   });
 });
 

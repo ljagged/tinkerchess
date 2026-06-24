@@ -106,17 +106,17 @@ function playerNames(game: Doc<"games">): { w: string | null; b: string | null }
 }
 
 /**
- * Coerce a stored game's state into a full engine GameState (wonBySelfCapture /
- * lastEvent are stored optional for back-compat; the engine treats absence as
- * the default).
+ * Coerce a stored game's state into a full engine GameState (lastEvent / captured
+ * / history are stored optional for back-compat; the engine treats absence as the
+ * default).
  */
 function engineState(game: Doc<"games">): engine.GameState {
   const s = game.state;
   return {
     ...s,
-    wonBySelfCapture: s.wonBySelfCapture ?? false,
     lastEvent: s.lastEvent ?? null,
     captured: s.captured ?? { w: [], b: [] },
+    history: s.history ?? [],
   };
 }
 
@@ -285,7 +285,7 @@ function replayFrame(state: engine.GameState, perspective: ReplayPerspective) {
       board: v.board,
       turn: v.turn,
       status: v.status,
-      wonBySelfCapture: v.wonBySelfCapture,
+      endReason: v.endReason,
       lastEvent: v.lastEvent,
       captured: v.captured,
       turnsTaken: v.turnsTaken,
@@ -298,7 +298,7 @@ function replayFrame(state: engine.GameState, perspective: ReplayPerspective) {
     board: v.board,
     turn: v.turn,
     status: v.status,
-    wonBySelfCapture: v.wonBySelfCapture,
+    endReason: v.endReason,
     lastEvent: v.lastEvent,
     captured: v.captured,
     turnsTaken: v.turnsTaken,
@@ -341,7 +341,7 @@ export const getMatchReplay = query({
       })),
     );
 
-    return { perspective, status: match.status, wonBySelfCapture: match.wonBySelfCapture, frames, moveLog };
+    return { perspective, status: match.status, endReason: match.endReason, frames, moveLog };
   },
 });
 
@@ -515,7 +515,7 @@ export const newGame = mutation({
         gameId,
         endedAt: Date.now(),
         status: game.state.status,
-        wonBySelfCapture: game.state.wonBySelfCapture ?? false,
+        endReason: game.state.endReason,
         config: game.state.config,
         whiteToken: game.whiteToken,
         blackToken: game.blackToken,
@@ -558,7 +558,7 @@ export const getMatchHistory = query({
       matchId: m._id,
       endedAt: m.endedAt,
       status: m.status,
-      wonBySelfCapture: m.wonBySelfCapture,
+      endReason: m.endReason,
       plies: m.log.length,
       yourColor:
         seatToken && m.whiteToken === seatToken
