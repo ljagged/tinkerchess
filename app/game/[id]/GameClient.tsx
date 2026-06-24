@@ -955,7 +955,7 @@ export function GameClient({ gameId }: { gameId: string }) {
               </div>
               <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
                 Right-click a piece to phase it out. It returns to its square after the
-                chosen number of your turns, removing whatever sits there. Capture the king to win.
+                chosen number of your turns, removing whatever sits there. Win by checkmate.
               </div>
             </IconPopover>
             {view.joinToken && (

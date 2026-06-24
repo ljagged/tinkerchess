@@ -156,8 +156,8 @@ export default function Home() {
         A fog-of-war chess variant. Any non-pawn piece can <strong>phase out</strong> — leave
         the board for a few turns and reappear on its square, removing whatever sits there
         (your own pieces included). You see your phased pieces and their timers; your opponent
-        only gets a one-turn warning before a piece returns. There is no checkmate:{" "}
-        <strong>capture the king to win.</strong>
+        only gets a one-turn warning before a piece returns. It's standard chess otherwise:{" "}
+        <strong>win by checkmate.</strong>
       </p>
 
       {showCreate ? (
