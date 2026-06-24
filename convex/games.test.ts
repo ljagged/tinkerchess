@@ -118,6 +118,28 @@ describe("games API", () => {
     ).rejects.toThrow();
   });
 
+  it("rejects an in-check non-resolving move with a readable message, accepts a legal one", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    const mv = (seat: string, from: string, to: string) =>
+      t.mutation(api.games.makeMove, { gameId: g.gameId, seatToken: seat, from: parseSquare(from), to: parseSquare(to) });
+
+    await mv(g.whiteSeat, "e2", "e4");
+    await mv(g.blackSeat, "f7", "f5");
+    await mv(g.whiteSeat, "d1", "h5"); // Qh5+ — Black is now in check
+
+    const view = await t.query(api.games.getGameView, { gameId: g.gameId, seatToken: g.blackSeat });
+    expect(view!.inCheck).toBe(true);
+
+    // A move that ignores the check is illegal. The client must get a readable
+    // ConvexError ("...in check..."), not a bare "Server Error" (the playtest bug).
+    await expect(mv(g.blackSeat, "a7", "a6")).rejects.toThrow(/in check/i);
+
+    // A legal response (interposing on g6) is accepted from the same state.
+    const after = await mv(g.blackSeat, "g7", "g6");
+    expect(after.turn).toBe("w");
+  });
+
   it("hides a phased piece from the opponent (fog boundary)", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);
