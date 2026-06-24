@@ -102,6 +102,33 @@ export function validatePhaseOut(state: GameState, action: PhaseOut): PhaseOutCh
 }
 
 /**
+ * All legal phase-out actions for the side to move: every (eligible piece ×
+ * duration 1..maxDuration) that passes validatePhaseOut. Built ON TOP of the
+ * existing validator — it adds no new legality logic. Returns [] if the game is
+ * over (and, because every phase-out fails the king-safety gate while in check,
+ * [] whenever the side to move is in check — RULES.md §8.3).
+ *
+ * Like legalMovesFrom this is a rules QUERY, not an adjudication input: phase-outs
+ * still never count toward "has a legal move" for mate/stalemate (adjudicate in
+ * game.ts uses legalMoves only). A consumer that needs the full action space —
+ * e.g. the bot — concatenates this with legalMoves.
+ */
+export function legalPhaseOuts(state: GameState): PhaseOut[] {
+  if (state.status !== "active") return [];
+  const config = state.config ?? DEFAULT_RULE_CONFIG;
+  const out: PhaseOut[] = [];
+  for (let from = 0; from < 64; from++) {
+    const piece = pieceAt(state.board, from);
+    if (!piece || piece.color !== state.turn || !isPhaseable(piece.type, config)) continue;
+    const max = maxDuration(piece.type, config);
+    for (let d = 1; d <= max; d++) {
+      if (validatePhaseOut(state, { from, duration: d }).ok) out.push({ from, duration: d });
+    }
+  }
+  return out;
+}
+
+/**
  * Apply a phase-out's mechanics, returning a new state. Removes the piece from
  * the board and records its return timer. Does NOT flip the turn.
  * Precondition: validatePhaseOut(state, action).ok — throws otherwise.
