@@ -3,6 +3,8 @@ import {
   TIME_CONTROLS,
   DEFAULT_TIME_CONTROL,
   timeControlDef,
+  timeControlCategory,
+  gameTypeLabel,
   resolveTimeControlId,
   newClock,
   startClock,
@@ -79,6 +81,21 @@ describe("clock math", () => {
     expect(remainingFor(c, "b", "w", 16_000)).toBe(180_000);
     // Never negative.
     expect(remainingFor(c, "w", "w", 999_999)).toBe(0);
+  });
+
+  it("maps a preset id to its game-type category, defaulting unknown/untimed to Untimed", () => {
+    expect(timeControlCategory("blitz_3_2")).toBe("Blitz");
+    expect(timeControlCategory("rapid_10_5")).toBe("Rapid");
+    expect(timeControlCategory("untimed")).toBe("Untimed");
+    expect(timeControlCategory(undefined)).toBe("Untimed");
+    expect(timeControlCategory("not_a_preset")).toBe("Untimed");
+  });
+
+  it("builds a self-contained game-type label", () => {
+    expect(gameTypeLabel("blitz_3_2")).toBe("Blitz · 3 + 2");
+    expect(gameTypeLabel("classical_30_0")).toBe("Classical · 30 + 0");
+    expect(gameTypeLabel("untimed")).toBe("Untimed");
+    expect(gameTypeLabel(undefined)).toBe("Untimed");
   });
 
   it("isExpired is true only once the running side crosses zero", () => {

@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { colorV, pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
+import { isQuickEmote } from "../src/emotes.js";
 import {
   applyMoveToClock,
   isExpired,
@@ -103,13 +104,26 @@ function sanitizeName(name: string | undefined): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/** Resolve stored names to colors via the white/black token mapping. */
+/** Resolve stored names to colors via the white/black token mapping. When both
+ * players entered the same display name (case-insensitive), the JOINER's copy is
+ * disambiguated to "Name (2)" so the two seats never read identically — there are
+ * no accounts, so a name is just a label and collisions are expected. Display-only:
+ * the stored names are untouched. */
 function playerNames(game: Doc<"games">): { w: string | null; b: string | null } {
+  const initiatorName = game.initiatorName ?? null;
+  let opponentName = game.opponentName ?? null;
+  if (
+    initiatorName &&
+    opponentName &&
+    initiatorName.toLowerCase() === opponentName.toLowerCase()
+  ) {
+    opponentName = `${opponentName} (2)`;
+  }
   const nameForToken = (token: string | null) =>
     token === game.initiatorToken
-      ? game.initiatorName ?? null
+      ? initiatorName
       : token && token === game.opponentToken
-        ? game.opponentName ?? null
+        ? opponentName
         : null;
   return { w: nameForToken(game.whiteToken), b: nameForToken(game.blackToken) };
 }
@@ -461,8 +475,25 @@ export const sendMessage = mutation({
   },
 });
 
+/** Post a quick emote (a one-tap canned gesture). Players only, same as chat. The
+ * emoji MUST be one of the known QUICK_EMOTES — the buttons can only send those, and
+ * the server rejects anything else. Stored as a message with kind:"emote" so the UI
+ * renders it as a gesture rather than a typed line. */
+export const sendEmote = mutation({
+  args: { gameId: v.id("games"), seatToken: v.string(), emoji: v.string() },
+  handler: async (ctx, { gameId, seatToken, emoji }) => {
+    const game = requireGame(await ctx.db.get("games", gameId));
+    const color = viewerFromToken(game, seatToken);
+    if (color === "spectator") throw new ConvexError("Only players can chat.");
+    if (!isQuickEmote(emoji)) throw new ConvexError("Unknown emote.");
+    await ctx.db.insert("messages", { gameId, color, text: emoji, kind: "emote", createdAt: Date.now() });
+    return null;
+  },
+});
+
 /** The game's chat, oldest first. Players only — spectators get an empty list
- * (the chat is private to the two seats). `mine` marks the caller's own messages. */
+ * (the chat is private to the two seats). `mine` marks the caller's own messages;
+ * `kind` is "emote" for a quick emote, else absent for a typed message. */
 export const getMessages = query({
   args: { gameId: v.id("games"), seatToken: v.optional(v.string()) },
   handler: async (ctx, { gameId, seatToken }) => {
@@ -475,7 +506,13 @@ export const getMessages = query({
       .withIndex("by_game", (q) => q.eq("gameId", gameId))
       .collect();
     msgs.sort((a, b) => a._creationTime - b._creationTime);
-    return msgs.map((m) => ({ id: m._id, color: m.color, text: m.text, mine: m.color === viewer }));
+    return msgs.map((m) => ({
+      id: m._id,
+      color: m.color,
+      text: m.text,
+      kind: m.kind ?? null,
+      mine: m.color === viewer,
+    }));
   },
 });
 

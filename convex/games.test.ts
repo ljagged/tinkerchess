@@ -260,6 +260,47 @@ describe("games API", () => {
     expect(history[0]!.endReason).toBe("resignation");
   });
 
+  it("quick emotes: whitelisted emoji post as kind:'emote'; unknown emoji are rejected", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+    await t.mutation(api.games.sendEmote, { gameId: g.gameId, seatToken: g.whiteSeat, emoji: "👋" });
+
+    const view = await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(view).toHaveLength(1);
+    expect(view[0]!.text).toBe("👋");
+    expect(view[0]!.kind).toBe("emote");
+    expect(view[0]!.mine).toBe(true);
+
+    // Anything outside the fixed palette is refused.
+    await expect(
+      t.mutation(api.games.sendEmote, { gameId: g.gameId, seatToken: g.whiteSeat, emoji: "💣" }),
+    ).rejects.toThrow();
+    // Spectators can't emote either.
+    await expect(
+      t.mutation(api.games.sendEmote, { gameId: g.gameId, seatToken: "bogus", emoji: "👋" }),
+    ).rejects.toThrow();
+
+    // A typed message carries no kind.
+    await t.mutation(api.games.sendMessage, { gameId: g.gameId, seatToken: g.whiteSeat, text: "hi" });
+    const after = await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(after[1]!.kind).toBeNull();
+  });
+
+  it("name collision: identical display names are disambiguated for the joiner", async () => {
+    const t = convexTest(schema, modules);
+    const init = await t.mutation(api.games.createGame, { name: "Alex" });
+    await t.mutation(api.games.joinByToken, { token: init.joinToken, name: "alex" });
+
+    const view = await t.query(api.games.getGameView, {
+      gameId: init.gameId,
+      seatToken: init.seatToken,
+    });
+    // The initiator keeps "Alex"; the joiner's identical name (case-insensitive) is
+    // shown as "alex (2)" so the two seats never read the same.
+    const names = [view!.players.w, view!.players.b].sort();
+    expect(names).toEqual(["Alex", "alex (2)"]);
+  });
+
   it("makeMove is idempotent on a retried requestId (no double-apply)", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

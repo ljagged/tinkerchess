@@ -240,6 +240,10 @@ export default defineSchema({
     gameId: v.id("games"),
     color: colorV,
     text: v.string(),
+    // "emote" marks a one-tap quick emote (rendered larger, as a gesture rather
+    // than a typed line); absent for an ordinary message. Optional for back-compat
+    // with rows written before emotes existed.
+    kind: v.optional(v.literal("emote")),
     createdAt: v.number(),
   }).index("by_game", ["gameId"]),
 });

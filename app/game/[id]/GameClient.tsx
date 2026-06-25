@@ -12,7 +12,13 @@ import { loadSeat, type Seat } from "../../seat";
 import { CopyButton, formatToken } from "../../token";
 import { errText } from "../../errors";
 import { TimeControlPicker } from "../../TimeControlPicker";
-import { remainingFor, DEFAULT_TIME_CONTROL, type TimeControlId } from "@/src/timecontrol";
+import {
+  remainingFor,
+  gameTypeLabel,
+  DEFAULT_TIME_CONTROL,
+  type TimeControlId,
+} from "@/src/timecontrol";
+import { QUICK_EMOTES } from "@/src/emotes";
 
 // The engine is intentionally NOT imported here — the server is authoritative
 // and getGameView hands us exactly what we're allowed to see. The client only
@@ -506,10 +512,12 @@ function ReplayOverlay({
   );
 }
 
-/** Players-only in-game chat. Live via Convex; private to the two seats. */
+/** Players-only in-game chat. Live via Convex; private to the two seats. Includes a
+ * row of quick emotes (one-tap canned gestures) above the text input. */
 function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string }) {
   const messages = useQuery(api.games.getMessages, { gameId, seatToken });
   const send = useMutation(api.games.sendMessage);
+  const sendEmote = useMutation(api.games.sendEmote);
   const [text, setText] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
 
@@ -534,10 +542,27 @@ function Chat({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string })
           <div className="muted" style={{ fontSize: "0.85rem" }}>No messages yet.</div>
         )}
         {(messages ?? []).map((m) => (
-          <div key={m.id} className={m.mine ? "chat-msg mine" : "chat-msg"}>
+          <div
+            key={m.id}
+            className={`chat-msg${m.mine ? " mine" : ""}${m.kind === "emote" ? " emote" : ""}`}
+          >
             <span className="chat-who">{m.mine ? "You" : "Opponent"}</span>
-            {m.text}
+            <span className="chat-text">{m.text}</span>
           </div>
+        ))}
+      </div>
+      <div className="emote-row" role="group" aria-label="Quick emotes">
+        {QUICK_EMOTES.map((e) => (
+          <button
+            type="button"
+            key={e.emoji}
+            className="emote-btn"
+            title={e.label}
+            aria-label={`Send ${e.label}`}
+            onClick={() => sendEmote({ gameId, seatToken, emoji: e.emoji }).catch(() => {})}
+          >
+            {e.emoji}
+          </button>
         ))}
       </div>
       <form
@@ -1466,6 +1491,9 @@ export function GameClient({ gameId }: { gameId: string }) {
         {/* RIGHT PANEL (single): tools, then the clocks bracketing the move list, then chat + past games. */}
         <aside className="rail rail-right">
           <div className="rail-tools">
+            <span className="gametype-chip" title="Game type">
+              {gameTypeLabel(view.clock?.preset)}
+            </span>
             <IconPopover icon="?" label="Rules" align="left">
               <strong>Phasing rules</strong>
               <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
