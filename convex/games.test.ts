@@ -231,6 +231,35 @@ describe("games API", () => {
     expect(await t.query(api.games.getMessages, { gameId: g.gameId, seatToken: g.whiteSeat })).toHaveLength(2);
   });
 
+  it("resign: a player resigns and the opponent wins by resignation; spectators can't; it's idempotent", async () => {
+    const t = convexTest(schema, modules);
+    const g = await startGame(t);
+
+    // A spectator (unrecognized token) cannot resign.
+    await expect(
+      t.mutation(api.games.resign, { gameId: g.gameId, seatToken: "bogus" }),
+    ).rejects.toThrow();
+
+    // Black resigns (it need not be their turn) → White wins by resignation.
+    const view = await t.mutation(api.games.resign, { gameId: g.gameId, seatToken: g.blackSeat });
+    expect(view.status).toBe("w_won");
+    expect(view.endReason).toBe("resignation");
+
+    // Resigning the now-finished game is a graceful no-op (returns the current view).
+    const again = await t.mutation(api.games.resign, { gameId: g.gameId, seatToken: g.whiteSeat });
+    expect(again.status).toBe("w_won");
+    expect(again.endReason).toBe("resignation");
+
+    // The outcome is preserved in the archive when the game is recycled for a rematch.
+    await t.mutation(api.games.newGame, { gameId: g.gameId, seatToken: g.whiteSeat });
+    const history = await t.query(api.games.getMatchHistory, {
+      gameId: g.gameId,
+      seatToken: g.whiteSeat,
+    });
+    expect(history[0]!.status).toBe("w_won");
+    expect(history[0]!.endReason).toBe("resignation");
+  });
+
   it("makeMove is idempotent on a retried requestId (no double-apply)", async () => {
     const t = convexTest(schema, modules);
     const g = await startGame(t);

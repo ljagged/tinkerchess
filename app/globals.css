@@ -85,6 +85,17 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Destructive confirm action (e.g. the final "Resign" in its dialog). Red is the
+   reserved danger hue; here it lives in chrome (a button, never a board square) and
+   is paired with an explicit confirm step + label, so it never reads as a game-state
+   cue (DESIGN.md). */
+.danger {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  font-weight: 600;
+}
+
 /* Labeled text field (player name, etc.) */
 .field-label {
   display: grid;
@@ -405,6 +416,36 @@ button:disabled {
   justify-content: center;
 }
 
+/* The in-game Resign control lives in the under-board action bar (.phase-action),
+   flush to the board's right edge. A quiet control — resigning is rare and
+   shouldn't compete with the board; the red danger emphasis is reserved for the
+   confirmation dialog. */
+.resign-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  padding: 0.45rem 0.9rem;
+}
+.resign-btn:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+/* The resignation gesture: a king laid on its side. No Unicode glyph for a tipped
+   king exists, so we rotate the upright king glyph. Rendered larger + bolder and at
+   full text contrast (the label stays muted) so it's legible at button size. */
+.tipped-king {
+  display: inline-block;
+  transform: rotate(60deg);
+  font-size: 1.7em;
+  line-height: 1;
+  font-weight: 700;
+  color: var(--text);
+}
+.resign-btn:hover .tipped-king {
+  color: var(--danger);
+}
+
 /* Chat (players only) */
 .chat-log {
   margin-top: 0.5rem;
@@ -716,6 +757,9 @@ button:disabled {
 /* Under-board action bar: the "Phase out" button (shown when a phase-eligible
    piece is selected) plus a contextual move/phase hint. */
 .phase-action {
+  /* Full board width so the hint can sit centered while the Resign button sits
+     flush to the board's right edge, both on one line (no separate low row). */
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -725,6 +769,13 @@ button:disabled {
 }
 .phase-action .phase-hint {
   margin: 0;
+  flex: 1;
+  text-align: center;
+}
+/* Keep the hint visually centered even when no Resign button is shown (e.g. a
+   spectator never reaches this branch, but the "Phase out" button can replace it). */
+.phase-action .resign-btn {
+  flex: 0 0 auto;
 }
 
 /* On-board phase dialog (right-click). Fixed width; the label and button never

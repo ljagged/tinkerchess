@@ -730,6 +730,40 @@ export const flagTimeout = mutation({
 });
 
 /**
+ * Resign. Either player may resign their ACTIVE game at any time (it need not be
+ * their turn); the opponent wins by "resignation". Pauses and clears the clock and
+ * cancels the pending flag, exactly like a checkmate/timeout end. A spectator can't
+ * resign; resigning a not-yet-started or already-finished game is a graceful no-op
+ * that just returns the current view (so a double-tap or a race can't error).
+ */
+export const resign = mutation({
+  args: { gameId: v.id("games"), seatToken: v.string() },
+  handler: async (ctx, { gameId, seatToken }) => {
+    const game = requireGame(await ctx.db.get("games", gameId));
+    const viewer = viewerFromToken(game, seatToken);
+    if (viewer === "spectator") throw new ConvexError("You are not a player in this game.");
+    if (game.opponentToken === null || game.state.status !== "active") {
+      return engine.viewFor(engineState(game), viewer);
+    }
+    const winner: "w" | "b" = viewer === "w" ? "b" : "w";
+    const next: engine.GameState = {
+      ...engineState(game),
+      status: winner === "w" ? "w_won" : "b_won",
+      endReason: "resignation",
+    };
+    // The game is over: pause the running period and drop the pending timeout job.
+    const clock: Clock | undefined = game.clock ? { ...game.clock, runningSince: null } : undefined;
+    await cancelTimeoutJob(ctx, game);
+    await ctx.db.patch("games", game._id, {
+      state: next,
+      ...(clock ? { clock } : {}),
+      timeoutJob: undefined,
+    });
+    return engine.viewFor(next, viewer);
+  },
+});
+
+/**
  * Reset a game for a rematch, keeping the same seats and join token but
  * RE-RANDOMIZING sides. Either player may trigger it. The finished game is first
  * archived as an immutable match record (history is preserved, not destroyed). The

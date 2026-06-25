@@ -31,12 +31,14 @@ export const selfCaptureEventV = v.object({
 });
 
 // Why a finished game ended (mirrors the engine EndReason). Absent while active.
-// "timeout" is adjudicated by the Convex clock layer (see games.ts), not the engine.
+// "timeout" and "resignation" are adjudicated by the Convex layer (see games.ts),
+// not the engine.
 export const endReasonV = v.union(
   v.literal("checkmate"),
   v.literal("stalemate"),
   v.literal("repetition"),
   v.literal("timeout"),
+  v.literal("resignation"),
 );
 
 // The chess clock stored on a game (mirrors src/timecontrol.ts `Clock`). Optional:
