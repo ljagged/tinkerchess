@@ -611,7 +611,8 @@ button:disabled {
    recognition-over-recall + Tufte signal-to-noise; the chips self-describe, so no
    per-category header rows). Selected chip = NEUTRAL highlight (border + subtle fill
    + weight + aria-checked), never a reserved game-state hue (see DESIGN.md). */
-.tc-grid {
+.tc-grid,
+.side-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 0.5rem;
@@ -622,7 +623,14 @@ button:disabled {
   padding: 0.5rem 0.4rem;
   text-align: center;
 }
-.tc-option.on {
+/* Side picker (White / Black / Random): same compact preset pattern, but word
+   labels use the UI font, not mono (DESIGN.md: mono is numeric/data only). */
+.side-option {
+  padding: 0.5rem 0.4rem;
+  text-align: center;
+}
+.tc-option.on,
+.side-option.on {
   border-color: var(--selected);
   /* Thick inset ring (DESIGN.md selected = thick border) so the choice reads at a
      glance, paired with a stronger neutral fill + weight. Neutral, not a reserved hue. */
