@@ -235,7 +235,7 @@ Build and test in order: **`legalPhaseOuts` (engine) → reconstruction/honesty 
 - Ring adjacent to enemy king scores as offense; own king adjacent to enemy ring scores as danger (5.4).
 
 ### 7.4 Search tests (`src/bot/search.test.ts`)
-- Mate-in-1 and mate-in-2 suites, including at least one **ringed** mate-in-1 (drive-and-ring) and several standard mates — confirms terminal scoring and the §4.1 corner interact correctly via engine `status`.
+- Mate suites confirming terminal scoring and the §4.1 corner interact correctly via engine `status`: standard mate-in-1, and a **phase-out mate** (a phase-out that opens a discovered/standard check delivering mate). **Correction (found in implementation):** a *single* phase-out cannot deliver a **ringed** check — `warningSquaresFor` places the ring on the phasing piece's own origin square, which the enemy king cannot be standing on. So a one-move phase-out mates only via a standard/discovered check (phasing a blocker), not via ring-check; true "drive-and-ring" mate is inherently multi-move. The earlier "ringed mate-in-1" item was therefore unrealizable and is replaced by the phase-out (discovered-check) mate test.
 - Does **not** hang a phase-eligible piece to a quiet attack (sees the phase-escape); **does** lose it when attacked with check.
 - In a quiet position with no concrete payoff, the chosen action is a move, not a phase-out (5.5).
 - **Determinism:** same position + same fixed depth ⇒ same `Action`, every run.
