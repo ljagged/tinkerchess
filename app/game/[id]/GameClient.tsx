@@ -155,12 +155,7 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
   }, [count]);
 
   if (!data || data.log.length === 0) {
-    return (
-      <div className="panel moves-panel">
-        <strong>Moves</strong>
-        <div className="muted" style={{ marginTop: "0.4rem" }}>No moves yet.</div>
-      </div>
-    );
+    return <div className="movelog-empty muted">No moves yet.</div>;
   }
 
   // Group each ply's events (move + any phase-ins) into that player's cell.
@@ -175,31 +170,38 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
     rows.set(moveNo, row);
   }
   const ordered = [...rows.entries()].sort((a, b) => a[0] - b[0]);
+  // Highlight the latest move (the "current" position; board-jump nav is deferred).
+  const last = data.log[data.log.length - 1]!;
+  const lastNo = Math.ceil(last.ply / 2);
+  const lastColor = last.color;
 
+  // Windowed list (recent moves are what matter mid-game); auto-scrolled to the
+  // latest, scrollable for history, current move highlighted.
   return (
-    <div className="panel moves-panel">
-      <strong>Moves</strong>
+    <>
       <div className="movelog" ref={logRef}>
         {ordered.map(([n, r]) => (
           <Fragment key={n}>
             <span className="movelog-n">{n}.</span>
-            <span>{r.w ?? ""}</span>
-            <span>{r.b ?? ""}</span>
+            <span className={n === lastNo && lastColor === "w" ? "cur" : ""}>{r.w ?? ""}</span>
+            <span className={n === lastNo && lastColor === "b" ? "cur" : ""}>{r.b ?? ""}</span>
           </Fragment>
         ))}
       </div>
-      {data.revealed && <div className="movelog-revealed">Full log revealed — game over.</div>}
-    </div>
+      {data.revealed && <div className="movelog-revealed">Full log — game over.</div>}
+    </>
   );
 }
 
 /**
- * The phase tray — your hidden pieces, each as a glyph wrapped in a cyan countdown
- * ring (fraction = turns left / the piece type's max) with a turns-left badge.
- * This is the DESIGN.md signature: hidden-but-yours state lives here, off the
- * board, so the board stays clean.
+ * The phase return-queue (DESIGN.md fog pattern) — your hidden pieces as a compact
+ * horizontal strip UNDER the board, ordered soonest-return first (left-most returns
+ * next), each a cyan countdown ring + glyph + turns-left badge. Headed by a small
+ * cyan ring icon, not a text label (the cyan vocabulary already says "phased/yours").
+ * Its job is roster + return-order triage, which the scattered board ghosts can't
+ * give at a glance. Collapses to nothing when you have no phased pieces.
  */
-function PhaseTray({
+function PhaseQueue({
   phased,
   color,
   rules,
@@ -208,27 +210,29 @@ function PhaseTray({
   color: "w" | "b";
   rules: GameView["rules"];
 }) {
-  if (phased.length === 0) {
-    return <div className="muted" style={{ marginTop: "0.4rem" }}>None.</div>;
-  }
+  if (phased.length === 0) return null;
+  const sorted = [...phased].sort((a, b) => a.turnsRemaining - b.turnsRemaining);
   return (
-    <div className="phasetray">
-      {phased.map((ph, i) => {
-        const max = rules[ph.type] || 1;
-        const frac = Math.max(0, Math.min(1, ph.turnsRemaining / max));
-        return (
-          <div
-            key={i}
-            className="pp"
-            style={{ ["--deg" as string]: `${Math.round(frac * 360)}deg` } as CSSProperties}
-            title={`${PIECE_NAME[ph.type]} → ${idxToSquare(ph.origin)}, returns in ${ph.turnsRemaining} turn${ph.turnsRemaining === 1 ? "" : "s"}`}
-          >
-            <span className="pp-ring" aria-hidden />
-            <span className="pp-glyph">{GLYPHS[color][ph.type]}</span>
-            <span className="pp-num">{ph.turnsRemaining}</span>
-          </div>
-        );
-      })}
+    <div className="phase-queue" aria-label="Your phased pieces, soonest return first">
+      <span className="phase-queue-icon" aria-hidden />
+      <div className="phase-queue-row">
+        {sorted.map((ph, i) => {
+          const max = rules[ph.type] || 1;
+          const frac = Math.max(0, Math.min(1, ph.turnsRemaining / max));
+          return (
+            <div
+              key={i}
+              className="pp"
+              style={{ ["--deg" as string]: `${Math.round(frac * 360)}deg` } as CSSProperties}
+              title={`${PIECE_NAME[ph.type]} → ${idxToSquare(ph.origin)}, returns in ${ph.turnsRemaining} turn${ph.turnsRemaining === 1 ? "" : "s"}`}
+            >
+              <span className="pp-ring" aria-hidden />
+              <span className="pp-glyph">{GLYPHS[color][ph.type]}</span>
+              <span className="pp-num">{ph.turnsRemaining}</span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1291,79 +1295,16 @@ export function GameClient({ gameId }: { gameId: string }) {
       )}
 
       <div className="game-grid">
-        {/* HEADER BAND — sits above the three aligned columns (phased / board /
-            chat). Left header is empty; center holds Opponent + captured material;
-            right holds the rules/spectator icons. This is what lines up the tops. */}
-        <div className="col-head head-spacer" />
-        <div className="col-head board-head">
-          <div className="board-stack-head" style={{ width: GUTTER + boardWidth }}>
+        {/* BOARD COLUMN — opponent row, board, your row, then the phase queue. */}
+        <section className="board-col" ref={setBoardCol}>
+          <div className="board-stack" style={{ width: GUTTER + boardWidth }}>
             <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
               <span className="who">
                 {topLabel}
                 {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
-              {clock && (
-                <LiveClock clock={clock} side={topColor} turn={view.turn} offsetMs={clockOffsetMs} />
-              )}
             </div>
-          </div>
-        </div>
-        <div className="col-head rail-head">
-          <div className="rail-tools">
-            <IconPopover icon="?" label="Rules" align="left">
-              <strong>Phasing rules</strong>
-              <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
-                {phaseable.length === 0
-                  ? "No pieces can phase."
-                  : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
-              </div>
-              <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
-                {isTouch
-                  ? "Tap one of your pieces, then choose Phase out"
-                  : "Right-click a piece to phase it out"}. It returns to its square after the
-                chosen number of your turns, removing whatever sits there. Win by checkmate.
-              </div>
-            </IconPopover>
-            {view.joinToken && (
-              <IconPopover icon="⤴" label="Invite spectators" align="left">
-                <strong>Invite spectators</strong>
-                <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
-                  <span className="token-code">{formatToken(view.joinToken)}</span>
-                  <CopyButton text={formatToken(view.joinToken)} />
-                </div>
-                <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
-                  Anyone with this token can watch.
-                </div>
-              </IconPopover>
-            )}
-          </div>
-        </div>
-
-        {/* LEFT RAIL — gameplay info: phased pieces (top), then the move list. */}
-        <aside className="rail rail-left">
-          {isPlayer && (
-            <div className="panel phased-panel">
-              <strong>Your phased pieces</strong>
-              <PhaseTray phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
-              {view.warningSquares.length > 0 && (
-                <div className="warn-line">
-                  ⚠ An opponent piece returns next turn (dashed square on the board).
-                </div>
-              )}
-            </div>
-          )}
-          <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
-          <MatchHistory
-            gameId={id}
-            seatToken={seat.seatToken ?? undefined}
-            onWatch={(matchId, color) => setReplay({ id: matchId, color })}
-          />
-        </aside>
-
-        {/* CENTER — the board, then your player row + captured material below it. */}
-        <section className="board-col" ref={setBoardCol}>
-          <div className="board-stack" style={{ width: GUTTER + boardWidth }}>
             <div
               className="board-frame"
               style={{
@@ -1444,10 +1385,15 @@ export function GameClient({ gameId }: { gameId: string }) {
                 {myTurn && <span className="move-dot" aria-hidden> ● to move</span>}
               </span>
               <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
-              {clock && (
-                <LiveClock clock={clock} side={bottomColor} turn={view.turn} offsetMs={clockOffsetMs} />
-              )}
             </div>
+            {isPlayer && (
+              <div className="under-board">
+                <PhaseQueue phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
+                {view.warningSquares.length > 0 && (
+                  <div className="warn-line">⚠ An opponent piece returns next turn (dashed square on the board).</div>
+                )}
+              </div>
+            )}
           </div>
           {isPlayer && view.status === "active" && (
             <div className="phase-action">
@@ -1471,9 +1417,61 @@ export function GameClient({ gameId }: { gameId: string }) {
           )}
         </section>
 
-        {/* RIGHT RAIL — communication (the tool icons live in the header above). */}
+        {/* RIGHT PANEL (single): tools, then the clocks bracketing the move list, then chat + past games. */}
         <aside className="rail rail-right">
+          <div className="rail-tools">
+            <IconPopover icon="?" label="Rules" align="left">
+              <strong>Phasing rules</strong>
+              <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.9rem" }}>
+                {phaseable.length === 0
+                  ? "No pieces can phase."
+                  : phaseable.map(([t, name]) => `${name} ≤${view.rules[t]}`).join(" · ")}
+              </div>
+              <div className="muted" style={{ marginTop: "0.5rem", fontSize: "0.85rem" }}>
+                {isTouch
+                  ? "Tap one of your pieces, then choose Phase out"
+                  : "Right-click a piece to phase it out"}. It returns to its square after the
+                chosen number of your turns, removing whatever sits there. Win by checkmate.
+              </div>
+            </IconPopover>
+            {view.joinToken && (
+              <IconPopover icon="⤴" label="Invite spectators" align="left">
+                <strong>Invite spectators</strong>
+                <div className="row" style={{ marginTop: "0.5rem", alignItems: "center", gap: "0.7rem" }}>
+                  <span className="token-code">{formatToken(view.joinToken)}</span>
+                  <CopyButton text={formatToken(view.joinToken)} />
+                </div>
+                <div className="muted" style={{ marginTop: "0.4rem", fontSize: "0.85rem" }}>
+                  Anyone with this token can watch.
+                </div>
+              </IconPopover>
+            )}
+          </div>
+
+          <div className="panel play-panel">
+            {clock && (
+              <LiveClock clock={clock} side={topColor} turn={view.turn} offsetMs={clockOffsetMs} />
+            )}
+            <div className={`namerow ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
+              <span className="turn-dot" aria-hidden />
+              <span className="nm">{topLabel}</span>
+            </div>
+            <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
+            <div className={`namerow ${myTurn ? "to-move" : ""}`}>
+              <span className="turn-dot" aria-hidden />
+              <span className="nm">{bottomLabel}</span>
+            </div>
+            {clock && (
+              <LiveClock clock={clock} side={bottomColor} turn={view.turn} offsetMs={clockOffsetMs} />
+            )}
+          </div>
+
           {isPlayer && seat.seatToken && <Chat gameId={id} seatToken={seat.seatToken} />}
+          <MatchHistory
+            gameId={id}
+            seatToken={seat.seatToken ?? undefined}
+            onWatch={(matchId, color) => setReplay({ id: matchId, color })}
+          />
         </aside>
       </div>
 

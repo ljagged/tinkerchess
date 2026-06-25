@@ -138,13 +138,15 @@ button:disabled {
   flex-wrap: wrap;
 }
 
-/* Move log: two-column algebraic notation (SAN + ↑/↓ phase grammar), monospace
-   for column alignment. */
+/* Move log: a windowed two-column algebraic list (SAN + ↑/↓ phase grammar), mono
+   for column alignment. Lives inside the play panel between the two clocks; shows
+   the recent moves (~4) auto-scrolled to the latest, scrollable for history, with
+   the current move highlighted. */
 .movelog {
   font-family: var(--mono);
   font-size: 0.95rem;
-  margin-top: 0.5rem;
-  max-height: 220px;
+  padding: 0.4rem 0.9rem;
+  max-height: 7.5rem;
   overflow-y: auto;
   display: grid;
   grid-template-columns: auto 1fr 1fr;
@@ -155,10 +157,21 @@ button:disabled {
   color: var(--muted);
   text-align: right;
 }
+.movelog .cur {
+  background: color-mix(in srgb, var(--selected) 16%, var(--panel-2));
+  border-radius: 4px;
+  padding: 0 4px;
+  color: var(--text);
+}
+.movelog-empty {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  padding: 0.6rem 0.9rem;
+}
 .movelog-revealed {
   color: var(--phase);
-  font-size: 0.8rem;
-  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0 0.9rem 0.5rem;
 }
 
 /* Phase tray — the signature component (DESIGN.md). Your hidden pieces, each
@@ -461,56 +474,22 @@ button:disabled {
     justify-items: start;
   }
 }
-/* Two rows: a header band (Opponent+captured over the board, icons over the chat,
-   empty over the phased panel) and a body band. Splitting it this way aligns the
-   tops of the phased panel, the board, and the chat. */
+/* Gameplay: board column + ONE right-hand panel (DESIGN.md: never multiple
+   sidebars). The panel stacks tools, the clock+moves block, chat, and past games. */
 .game-grid {
   display: grid;
-  grid-template-columns: 260px minmax(320px, 1fr) 320px;
-  grid-template-rows: auto auto;
+  grid-template-columns: minmax(320px, 1fr) 340px;
   column-gap: 1.25rem;
-  row-gap: 0.6rem;
   align-items: start;
-}
-.col-head {
-  display: flex;
-  align-items: flex-start;
-  min-width: 0;
-}
-.board-head {
-  justify-content: center;
-}
-.board-stack-head {
-  max-width: 100%;
 }
 @media (max-width: 1100px) {
   .game-grid {
     grid-template-columns: 1fr;
+    row-gap: 0.8rem;
   }
-  .head-spacer {
-    display: none;
-  }
-  .board-head {
-    order: 1;
-    justify-content: flex-start;
-  }
-  .board-col {
-    order: 2;
-  }
-  .rail-left {
-    order: 3;
-  }
-  /* Stacked layout: float the tool icons (rules / share) to the TOP of the screen,
-     right-aligned, instead of stranding them between the move list and the chat. */
-  .rail-head {
-    order: -1;
-  }
-  .rail-head .rail-tools {
-    width: 100%;
+  /* Tools to the top of the stacked layout, right-aligned. */
+  .rail-right .rail-tools {
     justify-content: flex-end;
-  }
-  .rail-right {
-    order: 5;
   }
 }
 .rail {
@@ -520,7 +499,7 @@ button:disabled {
   min-width: 0;
 }
 
-/* Center board column */
+/* Board column */
 .board-col {
   display: flex;
   flex-direction: column;
@@ -537,9 +516,9 @@ button:disabled {
 .board-frame {
   display: grid;
 }
-/* Player identity rows flanking the board. The side-to-move row brightens and
-   shows a "● to move" tag (a label, not color alone). padding-left = GUTTER
-   (22px) aligns the row content with the board's left edge. */
+/* Player identity rows flanking the board (name + captured material). The
+   side-to-move row brightens + shows a "● to move" tag (label, not color alone).
+   padding-left = GUTTER (22px) aligns row content with the board's left edge. */
 .player-row {
   display: flex;
   align-items: center;
@@ -566,41 +545,89 @@ button:disabled {
   white-space: nowrap;
 }
 
-/* Chess clock chip, anchored to the right of a player row (DESIGN.md: monospace,
-   active side emphasized). margin-left:auto pushes it to the board's right edge. */
+/* Under-board phase return-queue: a small cyan ring icon + soonest-first chips
+   (left-most returns next). Collapses to nothing when empty (handled in JS). */
+.under-board {
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.phase-queue {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+}
+.phase-queue-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px dashed var(--phase);
+  flex: 0 0 auto;
+}
+.phase-queue-row {
+  display: flex;
+  gap: 14px;
+}
+
+/* The single right-hand play panel: clocks bracket the windowed move list, with a
+   name row between each clock and the moves. No inner padding so the clocks read as
+   full-width bands (lichess pattern). */
+.play-panel {
+  padding: 0;
+  overflow: hidden;
+  display: grid;
+}
+.namerow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+.namerow .nm {
+  font-weight: 600;
+}
+.namerow.to-move {
+  color: var(--text);
+}
+.namerow .turn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.namerow.to-move .turn-dot {
+  background: var(--good);
+}
+
+/* Chess clock — a large mono block bracketing the move list (DESIGN.md). The
+   running side is emphasized with a NEUTRAL cue (left bar + lifted surface +
+   weight), never a reserved hue; low time is red (the one sanctioned reuse), still
+   shape-paired (bold + tenths). An active+low clock keeps the neutral bar + red text. */
 .clock {
-  margin-left: auto;
   font-family: var(--mono);
-  font-size: 1.05rem;
+  font-size: 2.2rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.02em;
-  min-width: 4.4em;
-  text-align: center;
-  padding: 0.2rem 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 0.35rem 0.9rem;
   background: var(--panel-2);
   color: var(--muted);
+  border-left: 4px solid transparent;
 }
-/* The running side is emphasized: brighter text + accent border/fill + weight. */
 .clock.active {
   color: var(--text);
   font-weight: 700;
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  background: color-mix(in srgb, var(--selected) 12%, var(--panel-2));
+  border-left-color: var(--selected);
 }
-/* Low time pairs the danger color with a heavier, solid border + bold (a shape
-   cue, never color alone — DESIGN.md). Tenths are shown by the formatter. */
 .clock.low {
   color: var(--danger);
-  border-color: var(--danger);
-  border-width: 2px;
   font-weight: 700;
-}
-.clock.active.low {
-  background: color-mix(in srgb, var(--danger) 16%, var(--panel-2));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 40%, transparent);
 }
 .clock.flagged {
   opacity: 0.85;
@@ -788,22 +815,19 @@ button:disabled {
   letter-spacing: 0.12em;
 }
 
-/* Fixed footprints so the rails don't reflow */
-.moves-panel .movelog {
-  max-height: 42vh;
-}
+/* Chat sits below the clock+moves block — right-sized (secondary feature), not a
+   full-height rail. */
 .rail-right .chat-panel {
   display: flex;
   flex-direction: column;
 }
 .rail-right .chat-log {
-  height: 48vh;
-  max-height: none;
+  height: auto;
+  max-height: 22vh;
 }
 .warn-line {
-  margin-top: 0.6rem;
   color: var(--warning);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 /* Game-over banner (full width, above the grid) */
