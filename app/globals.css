@@ -19,6 +19,7 @@
   --last-move: #f2c84b; /* last move (border) */
   --legal: #3da5a0; /* legal move / capture */
   --danger: #e5484d; /* check / destruction */
+  --selected: #d9e2ec; /* neutral selected (board square, picker chip) — NOT a reserved hue */
   --good: #6fae6f;
 
   /* Board squares — colorblind-safe (high luminance delta, no red/green). */
@@ -606,36 +607,25 @@ button:disabled {
   text-decoration: line-through;
 }
 
-/* Time-control picker (lichess-style preset grid). Selected chip = border + fill +
-   weight + aria-checked (a shape/label cue, not color alone). */
-.tc-picker {
+/* Time-control picker — a compact preset grid that fills the dialog width (HCI:
+   recognition-over-recall + Tufte signal-to-noise; the chips self-describe, so no
+   per-category header rows). Selected chip = NEUTRAL highlight (border + subtle fill
+   + weight + aria-checked), never a reserved game-state hue (see DESIGN.md). */
+.tc-grid {
   display: grid;
-  gap: 0.6rem;
-  margin-top: 0.2rem;
-}
-.tc-group {
-  display: grid;
-  gap: 0.3rem;
-}
-.tc-group-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--muted);
-}
-.tc-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin-top: 0.3rem;
 }
 .tc-option {
   font-family: var(--mono);
-  padding: 0.4rem 0.7rem;
+  padding: 0.5rem 0.4rem;
+  text-align: center;
 }
 .tc-option.on {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
+  border-color: var(--selected);
+  background: color-mix(in srgb, var(--selected) 16%, var(--panel-2));
+  color: var(--text);
   font-weight: 700;
 }
 
