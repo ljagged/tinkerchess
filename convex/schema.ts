@@ -172,6 +172,11 @@ export default defineSchema({
     // to colors in getGameView via the white/black token mapping.
     initiatorName: v.optional(v.string()),
     opponentName: v.optional(v.string()),
+    // Set when one seat is the server-side robo-player: the color the BOT plays.
+    // Absent for human-vs-human games. When it becomes this color's turn, commit()
+    // schedules the bot to act (see convex/bot.ts). The bot still holds a normal
+    // seat token (white/blackToken) and acts through the same makeMove/phaseOut path.
+    botColor: v.optional(colorV),
     // The chess clock, or absent for an untimed game (see clockV). Starts running
     // when the opponent joins (white's period) and switches sides on each move.
     clock: v.optional(clockV),

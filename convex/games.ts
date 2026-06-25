@@ -3,7 +3,7 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
-import { pieceTypeV, ruleConfigV } from "./schema";
+import { colorV, pieceTypeV, ruleConfigV } from "./schema";
 import * as engine from "../src/engine/index.js";
 import {
   applyMoveToClock,
@@ -119,7 +119,7 @@ function playerNames(game: Doc<"games">): { w: string | null; b: string | null }
  * / history are stored optional for back-compat; the engine treats absence as the
  * default).
  */
-function engineState(game: Doc<"games">): engine.GameState {
+export function engineState(game: Doc<"games">): engine.GameState {
   const s = game.state;
   return {
     ...s,
@@ -158,6 +158,56 @@ export const createGame = mutation({
       createdAt: Date.now(),
     });
     return { gameId, joinToken, seatToken: initiatorToken };
+  },
+});
+
+/**
+ * Create a game against the server-side robo-player. The bot fills the opponent
+ * seat immediately, so the game is active at once (no join step). The bot's color
+ * is `botColor` if given, else random. If the bot is White it moves first — we
+ * schedule its turn now. The bot holds a normal seat token and plays through the
+ * same makeMove/phaseOut path a human would; only `botColor` marks the seat.
+ */
+export const createBotGame = mutation({
+  args: {
+    config: v.optional(ruleConfigV),
+    name: v.optional(v.string()),
+    timeControl: v.optional(v.string()),
+    botColor: v.optional(colorV),
+  },
+  handler: async (ctx, { config, name, timeControl, botColor }) => {
+    const joinToken = await uniqueJoinToken(ctx);
+    const humanToken = crypto.randomUUID();
+    const botToken = crypto.randomUUID();
+    const botIsWhite = botColor === "w" || (botColor === undefined && Math.random() < 0.5);
+    const resolvedBotColor: "w" | "b" = botIsWhite ? "w" : "b";
+    // Active immediately (both seats filled) ⇒ white's clock starts now.
+    const fresh = timeControl !== undefined ? newClock(resolveTimeControlId(timeControl)) : undefined;
+    const clock = fresh ? startClock(fresh, Date.now()) : undefined;
+    const gameId = await ctx.db.insert("games", {
+      state: engine.createGame(sanitizeConfig(config)),
+      joinToken,
+      initiatorToken: humanToken,
+      opponentToken: botToken, // the bot occupies the opponent seat
+      whiteToken: botIsWhite ? botToken : humanToken,
+      blackToken: botIsWhite ? humanToken : botToken,
+      initiatorName: sanitizeName(name),
+      botColor: resolvedBotColor,
+      ...(clock ? { clock } : {}),
+      createdAt: Date.now(),
+    });
+    // Mirror joinByToken's server-side flag for white's running clock.
+    if (clock) {
+      const timeoutJob = await scheduleTimeout(ctx, gameId, clock, "w");
+      await ctx.db.patch("games", gameId, { timeoutJob });
+    }
+    if (botIsWhite) await ctx.scheduler.runAfter(0, internal.bot.takeTurn, { gameId });
+    return {
+      gameId,
+      seatToken: humanToken,
+      yourColor: botIsWhite ? ("b" as const) : ("w" as const),
+      joinToken,
+    };
   },
 });
 
@@ -602,6 +652,12 @@ async function commit(
     events,
     ...(requestId ? { requestId } : {}),
   });
+  // If it is now the bot's turn, let the server-side actor play. Scheduled so it
+  // runs AFTER this mutation commits and routes back through this same commit path
+  // (the bot's own move then flips the turn back, so this never loops).
+  if (game.botColor && next.status === "active" && next.turn === game.botColor) {
+    await ctx.scheduler.runAfter(0, internal.bot.takeTurn, { gameId: game._id });
+  }
   return engine.viewFor(next, color);
 }
 
