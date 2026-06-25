@@ -49,13 +49,14 @@ export type GameStatus = "active" | "w_won" | "b_won" | "draw";
 
 /**
  * Why a finished game ended. Absent while the game is active. A win
- * (`w_won`/`b_won`) is by `"checkmate"` or `"timeout"`; a `"draw"` is by
- * `"stalemate"` or threefold `"repetition"`. NOTE: `"timeout"` is adjudicated by
- * the Convex clock layer, NOT this engine — the engine's `adjudicate` never emits
- * it. It is part of this union only so a single `endReason` field can describe
- * every way a game can end as it flows through views, the archive, and the UI.
+ * (`w_won`/`b_won`) is by `"checkmate"`, `"timeout"`, or `"resignation"`; a
+ * `"draw"` is by `"stalemate"` or threefold `"repetition"`. NOTE: `"timeout"` and
+ * `"resignation"` are adjudicated by the Convex layer, NOT this engine — the
+ * engine's `adjudicate` never emits them. They are part of this union only so a
+ * single `endReason` field can describe every way a game can end as it flows
+ * through views, the archive, and the UI.
  */
-export type EndReason = "checkmate" | "stalemate" | "repetition" | "timeout";
+export type EndReason = "checkmate" | "stalemate" | "repetition" | "timeout" | "resignation";
 
 /** A non-terminal "footgun": a phase-in removed one of the owner's OWN pieces. */
 export interface SelfCaptureEvent {

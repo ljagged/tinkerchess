@@ -355,9 +355,10 @@ function matchResultText(m: MatchSummary): string {
     return m.endReason === "repetition" ? "Draw (repetition)" : "Draw (stalemate)";
   }
   const winner = m.status === "w_won" ? "w" : "b";
-  const onTime = m.endReason === "timeout" ? " on time" : "";
-  if (m.yourColor) return (m.yourColor === winner ? "You won" : "You lost") + onTime;
-  return (winner === "w" ? "White won" : "Black won") + onTime;
+  const how =
+    m.endReason === "timeout" ? " on time" : m.endReason === "resignation" ? " by resignation" : "";
+  if (m.yourColor) return (m.yourColor === winner ? "You won" : "You lost") + how;
+  return (winner === "w" ? "White won" : "Black won") + how;
 }
 
 /** Past finished games for this game's seats. Self-hides when there are none. */
@@ -764,6 +765,7 @@ export function GameClient({ gameId }: { gameId: string }) {
   const makeMove = useMutation(api.games.makeMove);
   const phaseOut = useMutation(api.games.phaseOut);
   const newGame = useMutation(api.games.newGame);
+  const resign = useMutation(api.games.resign);
 
   const [seat, setSeat] = useState<Seat | null>(null);
   const [noSeat, setNoSeat] = useState(false);
@@ -781,6 +783,9 @@ export function GameClient({ gameId }: { gameId: string }) {
   // Rematch time-control chooser (opened from the game-over banner).
   const [showRematch, setShowRematch] = useState(false);
   const [rematchTC, setRematchTC] = useState<TimeControlId>(DEFAULT_TIME_CONTROL);
+  // Resign confirmation dialog (resigning is destructive + irreversible, so it's
+  // always behind a confirm — never a single misclick).
+  const [showResign, setShowResign] = useState(false);
   // Client→server clock offset (serverNow − Date.now()), refreshed whenever a new
   // view arrives. The actual ticking + flag-claim live in the isolated <LiveClock>
   // / <TimeoutFlagger> components so they don't re-render the board.
@@ -1186,6 +1191,17 @@ export function GameClient({ gameId }: { gameId: string }) {
     }
   };
 
+  const confirmResign = async () => {
+    setShowResign(false);
+    if (!seat.seatToken) return;
+    try {
+      await resign({ gameId: id, seatToken: seat.seatToken });
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
   // Drag the corner handle to resize the board; the choice persists.
   const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1248,6 +1264,12 @@ export function GameClient({ gameId }: { gameId: string }) {
           ? "Won on time!"
           : "Lost on time."
         : `${colorName(winner)} won on time.`;
+    } else if (view.endReason === "resignation") {
+      status = isPlayer
+        ? youWon
+          ? "Opponent resigned — you win!"
+          : "You resigned."
+        : `${colorName(winner === "w" ? "b" : "w")} resigned — ${colorName(winner)} wins.`;
     } else {
       status = isPlayer
         ? youWon
@@ -1283,8 +1305,13 @@ export function GameClient({ gameId }: { gameId: string }) {
       resultLine = `½–½ · ${view.endReason === "repetition" ? "repetition" : "stalemate"}`;
     } else {
       const whiteWon = view.status === "w_won";
+      const loser = whiteWon ? "Black" : "White";
       const cause =
-        view.endReason === "timeout" ? `${whiteWon ? "Black" : "White"} out of time` : "checkmate";
+        view.endReason === "timeout"
+          ? `${loser} out of time`
+          : view.endReason === "resignation"
+            ? `${loser} resigned`
+            : "checkmate";
       resultLine = `${whiteWon ? "1–0" : "0–1"} · ${cause}`;
     }
   }
@@ -1416,6 +1443,12 @@ export function GameClient({ gameId }: { gameId: string }) {
                 </button>
               )}
               <span className="phase-hint">{actionHint}</span>
+              {seat.seatToken && (
+                <button type="button" className="resign-btn" onClick={() => setShowResign(true)}>
+                  <span className="tipped-king" aria-hidden>♚</span>
+                  Resign
+                </button>
+              )}
             </div>
           )}
           <span className="sr-only" aria-live="polite">{status}</span>
@@ -1525,6 +1558,29 @@ export function GameClient({ gameId }: { gameId: string }) {
             <div className="row" style={{ justifyContent: "flex-end" }}>
               <button className="primary" onClick={startNewGame}>
                 Start game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showResign && (
+        <div className="replay-overlay" onClick={() => setShowResign(false)}>
+          <div
+            className="replay-card"
+            style={{ maxWidth: 380 }}
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-label="Confirm resignation"
+          >
+            <strong>Resign this game?</strong>
+            <p className="muted" style={{ margin: "0.5rem 0 0", fontSize: "0.9rem" }}>
+              Your opponent wins immediately. This can&rsquo;t be undone.
+            </p>
+            <div className="row" style={{ justifyContent: "flex-end", gap: "0.5rem", marginTop: "0.9rem" }}>
+              <button onClick={() => setShowResign(false)}>Cancel</button>
+              <button className="danger" onClick={confirmResign}>
+                Resign
               </button>
             </div>
           </div>
