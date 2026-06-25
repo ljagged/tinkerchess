@@ -16,15 +16,20 @@ import type { Doc } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import { v } from "convex/values";
 import * as engine from "../src/engine/index.js";
-import { chooseAction } from "../src/bot/index.js";
+import { chooseAction, moveTimeBudgetMs, UNTIMED_BUDGET_MS } from "../src/bot/index.js";
 import type { PublicState, SeatPhaseEvent } from "../src/bot/index.js";
 import { engineState } from "./games";
 
 // F5 (runtime budget): the search runs in an ACTION (not the move mutation), so a
-// few hundred ms of CPU never blocks a transaction or risks OCC contention. The
-// per-move budget is bounded well under Convex's action limits; tune against a real
-// deployment before raising it.
-const BOT_TIME_BUDGET_MS = 800;
+// few hundred ms of CPU never blocks a transaction or risks OCC contention.
+//
+// In a TIMED game the per-move budget is derived from the bot's OWN remaining clock
+// time (see moveTimeBudgetMs) so the bot spends time like a player — more when the
+// clock is healthy, less under pressure, never into a self-inflicted flag. In an
+// untimed game there is no clock to spend, so a fixed responsive budget is used.
+// The clock's banked `remaining[botColor]` is effectively live here: the bot's turn
+// is scheduled the instant the human's move switches the clock (runAfter 0), so the
+// elapsed since the bot's period started is negligible.
 
 /**
  * Fold the move log into a fog-safe phase-event stream for the bot. Each phase
@@ -73,6 +78,9 @@ export const botContext = internalQuery({
       castling: s.castling,
       enPassant: s.enPassant,
     };
+    const budgetMs = game.clock
+      ? moveTimeBudgetMs(game.clock.remaining[botColor], game.clock.incrementMs)
+      : UNTIMED_BUDGET_MS;
     return {
       botColor,
       botSeatToken: botColor === "w" ? game.whiteToken : game.blackToken,
@@ -80,6 +88,7 @@ export const botContext = internalQuery({
       publicState,
       seatEvents: seatPhaseEvents(rows),
       ply: s.turnsTaken.w + s.turnsTaken.b,
+      budgetMs,
     };
   },
 });
@@ -96,7 +105,7 @@ export const takeTurn = internalAction({
     const c = await ctx.runQuery(internal.bot.botContext, { gameId });
     if (!c || !c.botSeatToken) return null;
 
-    const opts = maxDepth !== undefined ? { maxDepth } : { timeBudgetMs: BOT_TIME_BUDGET_MS };
+    const opts = maxDepth !== undefined ? { maxDepth } : { timeBudgetMs: c.budgetMs };
     const action = chooseAction(c.view as engine.GameView, c.publicState, c.seatEvents, opts);
     const requestId = `bot:${gameId}:${c.ply}`; // one move per ply, even if re-scheduled
 
