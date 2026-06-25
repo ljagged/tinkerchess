@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ComponentProps, CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Chessboard } from "react-chessboard";
@@ -176,20 +176,18 @@ function MoveLog({ gameId, seatToken }: { gameId: Id<"games">; seatToken: string
   const lastColor = last.color;
 
   // Windowed list (recent moves are what matter mid-game); auto-scrolled to the
-  // latest, scrollable for history, current move highlighted.
+  // latest, scrollable for history, current move highlighted. The game-over result
+  // line is rendered by the parent panel (it has status/endReason).
   return (
-    <>
-      <div className="movelog" ref={logRef}>
-        {ordered.map(([n, r]) => (
-          <Fragment key={n}>
-            <span className="movelog-n">{n}.</span>
-            <span className={n === lastNo && lastColor === "w" ? "cur" : ""}>{r.w ?? ""}</span>
-            <span className={n === lastNo && lastColor === "b" ? "cur" : ""}>{r.b ?? ""}</span>
-          </Fragment>
-        ))}
-      </div>
-      {data.revealed && <div className="movelog-revealed">Full log — game over.</div>}
-    </>
+    <div className="movelog" ref={logRef}>
+      {ordered.map(([n, r]) => (
+        <Fragment key={n}>
+          <span className="movelog-n">{n}.</span>
+          <span className={n === lastNo && lastColor === "w" ? "cur" : ""}>{r.w ?? ""}</span>
+          <span className={n === lastNo && lastColor === "b" ? "cur" : ""}>{r.b ?? ""}</span>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -792,24 +790,14 @@ export function GameClient({ gameId }: { gameId: string }) {
   // persisted) and is clamped to whatever the column actually offers. This makes
   // it bigger than before, responsive to the window, and resizable like lichess.
   const [boardMax, setBoardMax] = useState(BOARD_DEFAULT);
-  const [availWidth, setAvailWidth] = useState(BOARD_DEFAULT);
   // Touch/coarse-pointer devices (iPad, phones) have no right-click, so phasing
   // is offered as a tap instead (see onSquareClick). Detected client-side; false
   // during SSR so desktop keeps its right-click flow untouched.
   const [isTouch, setIsTouch] = useState(false);
-  // Viewport width — only used to size the waiting-room board (which renders
-  // before the resize-observed board column exists). Starts at the desktop
-  // default so SSR/first paint is stable.
-  const [viewportW, setViewportW] = useState(BOARD_DEFAULT);
-  const roRef = useRef<ResizeObserver | null>(null);
-  const setBoardCol = useCallback((el: HTMLDivElement | null) => {
-    roRef.current?.disconnect();
-    if (!el) return;
-    const ro = new ResizeObserver(() => setAvailWidth(el.clientWidth));
-    ro.observe(el);
-    roRef.current = ro;
-    setAvailWidth(el.clientWidth);
-  }, []);
+  // Viewport width drives board sizing — measured from the viewport (not the board
+  // column) so the column can shrink to the board and the panel sits right next to
+  // it. Starts at a desktop default so SSR/first paint is stable.
+  const [viewportW, setViewportW] = useState(1200);
 
   // Entry is via token on the splash; a direct visitor with no seat is sent back.
   useEffect(() => {
@@ -880,6 +868,12 @@ export function GameClient({ gameId }: { gameId: string }) {
     api.games.getGameView,
     seat ? { gameId: id, seatToken: seat.seatToken ?? undefined } : "skip",
   );
+  // The move log (shared subscription with <MoveLog> — Convex dedups identical
+  // queries) so the board can highlight the last move's squares. from/to are public.
+  const moveData = useQuery(
+    api.games.getMoveLog,
+    seat ? { gameId: id, seatToken: seat.seatToken ?? undefined } : "skip",
+  );
 
   // Re-align to server time whenever a fresh view (with serverNow) arrives. This
   // updates only on data changes (infrequent), not on every clock tick.
@@ -948,17 +942,32 @@ export function GameClient({ gameId }: { gameId: string }) {
   const myTurn =
     view.status === "active" && isPlayer && myColor === view.turn && !!seat.seatToken;
 
-  // Final board width: fill the column up to the user's chosen max, but never
-  // exceed what the column actually offers — so on a narrow phone the board
-  // shrinks to fit instead of overflowing (BOARD_MIN is a resize floor, not a
-  // render floor). Keep a small absolute floor only as a last-resort guard.
-  const fitWidth = availWidth - GUTTER - 8;
-  const boardWidth = Math.max(240, Math.min(boardMax, fitWidth));
+  // Final board width: from the viewport, up to the user's chosen max. On wide
+  // screens reserve the panel width (so the board column shrinks to the board and
+  // the panel sits next to it); on stacked/narrow layouts the board gets the full
+  // width. 240 is a last-resort render floor.
+  const stacked = viewportW <= 1100;
+  const avail =
+    Math.min(viewportW, 1440) - 40 /* .game h-padding */ - GUTTER - 8 -
+    (stacked ? 0 : 340 /* panel */ + 20 /* column gap */);
+  const boardWidth = Math.max(240, Math.min(boardMax, avail));
 
   // --- square highlights. The fog cues (your phased ghost, opponent warning) are
   // drawn by BoardOverlay below as on-board shapes (DESIGN.md). Here we only mark
   // the selected piece. Color is always paired with a shape cue (colorblind-safe).
   const styles: Record<string, CSSProperties> = {};
+  // Last-move highlight (DESIGN.md: amber, solid border on both squares). The last
+  // move's from/to come from the move log (public). Applied FIRST so the selected /
+  // legal-move / check cues for the CURRENT action override it.
+  if (moveData && moveData.log.length > 0) {
+    const lastPly = moveData.log[moveData.log.length - 1]!.ply;
+    for (const e of moveData.log) {
+      if (e.ply !== lastPly) continue;
+      for (const sq of [e.from, e.to]) {
+        if (sq !== undefined) styles[idxToSquare(sq)] = { boxShadow: "inset 0 0 0 4px var(--last-move)" };
+      }
+    }
+  }
   // Tap-to-move selection: only valid while it's your turn and the square still
   // holds one of your pieces (guards against a stale index across turns/fog).
   const selValid =
@@ -1257,12 +1266,28 @@ export function GameClient({ gameId }: { gameId: string }) {
         } own ${(PIECE_NAME[ev.piece] ?? "piece").toLowerCase()} on ${idxToSquare(ev.square)}.`
       : null;
 
-  // Captured-piece trays. Each player's captures sit behind their own back rank:
-  // the bottom player's (their captures of the opponent) below the board, the
-  // top player's above it. captured[X] holds X's lost pieces.
+  // Captured material lives in the panel by each player's clock (the "past": material
+  // + time + recent moves). captured[X] holds X's lost pieces; you display the
+  // opponent's losses by your clock and vice-versa. Small glyphs for the panel.
   const bottomColor: "w" | "b" = myColor === "b" ? "b" : "w";
   const topColor: "w" | "b" = bottomColor === "w" ? "b" : "w";
-  const glyphSize = Math.round(boardWidth / 14);
+  const capturedGlyph = 16;
+
+  // Game-result line for the move list (standard chess result token + cause). A
+  // clock loss has no inline move glyph (PGN marks it Termination "Time forfeit"),
+  // so we render the token + a plain-English cause so the transcript doesn't just
+  // stop. Null while the game is active.
+  let resultLine: string | null = null;
+  if (view.status !== "active") {
+    if (view.status === "draw") {
+      resultLine = `½–½ · ${view.endReason === "repetition" ? "repetition" : "stalemate"}`;
+    } else {
+      const whiteWon = view.status === "w_won";
+      const cause =
+        view.endReason === "timeout" ? `${whiteWon ? "Black" : "White"} out of time` : "checkmate";
+      resultLine = `${whiteWon ? "1–0" : "0–1"} · ${cause}`;
+    }
+  }
 
   // The clock (null for an untimed game). Each side renders an isolated <LiveClock>
   // that ticks on its own; <TimeoutFlagger> (mounted once below) claims the flag.
@@ -1295,16 +1320,11 @@ export function GameClient({ gameId }: { gameId: string }) {
       )}
 
       <div className="game-grid">
-        {/* BOARD COLUMN — opponent row, board, your row, then the phase queue. */}
-        <section className="board-col" ref={setBoardCol}>
+        {/* BOARD COLUMN — just the board + the under-board phase queue (present &
+            future). Names, clocks, and captured material (the past) live in the
+            right panel by the clocks. */}
+        <section className="board-col">
           <div className="board-stack" style={{ width: GUTTER + boardWidth }}>
-            <div className={`player-row ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
-              <span className="who">
-                {topLabel}
-                {!myTurn && view.status === "active" && <span className="move-dot" aria-hidden> ● to move</span>}
-              </span>
-              <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={glyphSize} />
-            </div>
             <div
               className="board-frame"
               style={{
@@ -1379,13 +1399,6 @@ export function GameClient({ gameId }: { gameId: string }) {
               </div>
             </div>
 
-            <div className={`player-row ${myTurn ? "to-move" : ""}`}>
-              <span className="who">
-                {bottomLabel}
-                {myTurn && <span className="move-dot" aria-hidden> ● to move</span>}
-              </span>
-              <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={glyphSize} />
-            </div>
             {isPlayer && (
               <div className="under-board">
                 <PhaseQueue phased={view.yourPhased} color={myColor === "b" ? "b" : "w"} rules={view.rules} />
@@ -1455,11 +1468,14 @@ export function GameClient({ gameId }: { gameId: string }) {
             <div className={`namerow ${!myTurn && view.status === "active" ? "to-move" : ""}`}>
               <span className="turn-dot" aria-hidden />
               <span className="nm">{topLabel}</span>
+              <CapturedTray pieces={view.captured[bottomColor]} color={bottomColor} glyphSize={capturedGlyph} />
             </div>
             <MoveLog gameId={id} seatToken={seat.seatToken ?? undefined} />
+            {resultLine && <div className="movelog-result">{resultLine}</div>}
             <div className={`namerow ${myTurn ? "to-move" : ""}`}>
               <span className="turn-dot" aria-hidden />
               <span className="nm">{bottomLabel}</span>
+              <CapturedTray pieces={view.captured[topColor]} color={topColor} glyphSize={capturedGlyph} />
             </div>
             {clock && (
               <LiveClock clock={clock} side={bottomColor} turn={view.turn} offsetMs={clockOffsetMs} />

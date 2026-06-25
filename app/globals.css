@@ -173,6 +173,15 @@ button:disabled {
   font-size: 0.78rem;
   padding: 0 0.9rem 0.5rem;
 }
+/* Game result line under the move list (chess result token + cause, e.g.
+   "0–1 · White out of time"). Fills the "transcript just stops" gap on game over. */
+.movelog-result {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  padding: 0.25rem 0.9rem 0.5rem;
+  color: var(--text);
+}
 
 /* Phase tray — the signature component (DESIGN.md). Your hidden pieces, each
    wrapped in a cyan countdown ring with a turns-left badge. */
@@ -478,13 +487,15 @@ button:disabled {
    sidebars). The panel stacks tools, the clock+moves block, chat, and past games. */
 .game-grid {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) 340px;
+  grid-template-columns: auto 340px;
+  justify-content: start; /* board column shrinks to the board; panel sits next to it */
   column-gap: 1.25rem;
   align-items: start;
 }
 @media (max-width: 1100px) {
   .game-grid {
     grid-template-columns: 1fr;
+    justify-content: stretch;
     row-gap: 0.8rem;
   }
   /* Tools to the top of the stacked layout, right-aligned. */
@@ -582,7 +593,8 @@ button:disabled {
 .namerow {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem 0.5rem;
+  flex-wrap: wrap;
   padding: 0.4rem 0.9rem;
   font-size: 0.92rem;
   color: var(--muted);

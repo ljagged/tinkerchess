@@ -151,17 +151,26 @@ game-state thing — see Color). Numeric/data chips use JetBrains Mono (`--mono`
 
 ## Layout
 - **Approach:** Board-dominant; **a single quiet right-hand panel. Never multiple sidebars.**
-- **The right panel (top → bottom):** the lichess pattern — opponent **clock** (top),
-  opponent name, the **move list** (windowed to the most recent moves, current highlighted),
-  your name, your **clock** (bottom), then **chat** below. The two clocks bracket the move
-  list so a player reads both times in one glance.
+  The panel sits **right next to the board** (a left-aligned board+panel block), not flush to
+  the screen edge, so the clock/log stays in sight while you look at the board.
+- **Past vs present/future split** — the right panel holds the **past** (captured material +
+  time + recent moves); the **board + under-board phase queue** hold the **present & future**
+  (current position + which pieces return, when). The board itself carries no name/material rows.
+- **The right panel (top → bottom):** the lichess pattern — opponent **clock** (top), opponent
+  **name + their captured material**, the **move list** (windowed, current highlighted, ending
+  in the game-result line on game over), your **name + your captured material**, your **clock**
+  (bottom), then **chat** below (right-sized, secondary). The two clocks bracket the move list
+  so a player reads both times in one glance; each player's captured material sits by their clock.
 - **Clocks are stacked, not flanking the board.** Active side marked by a border/background
   (not by waiting for the digit to tick — see Color). Both visible together.
-- **Captured material** flanks the board (opponent's above, yours below), in the player rows.
 - **Phase pieces live UNDER the board** as a return queue (not in the panel) — see Fog UI.
 - **Coordinates:** rank numbers down the left gutter, file letters along the bottom gutter.
+- **Last move:** the from + to squares are highlighted on the board (amber, see Color).
 - **Move list:** a short window of recent moves (≈4), current move highlighted, scrollable
-  for history. Move-nav (first / prev / next / last that rewinds the board) is deferred.
+  for history. On game over it ends with the standard **result token** (`1-0` / `0-1` / `½-½`)
+  plus the cause (checkmate / stalemate / repetition / "out of time" — a clock loss is PGN
+  `Termination "Time forfeit"`, which has no inline move glyph). Move-nav (first / prev / next /
+  last that rewinds the board) is deferred.
 - **Max content width:** board + one panel; let the board scale to viewport.
 - **Border radius:** sm 8px, md 14px, full 999px.
 
