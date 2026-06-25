@@ -74,4 +74,21 @@ describe("bot wiring", () => {
     expect("returnOn" in e).toBe(false);
     expect("duration" in e).toBe(false);
   });
+
+  it("derives the move budget from the bot's clock in a timed game", async () => {
+    const t = convexTest(schema, modules);
+    // Bot plays White in a 10+5 game ⇒ its turn immediately, full clock.
+    const g = await t.mutation(api.games.createBotGame, { botColor: "w", timeControl: "rapid_10_5" });
+    const ctx = await t.query(internal.bot.botContext, { gameId: g.gameId });
+    // 600s remaining + 5s increment ⇒ clamped to the per-move maximum (2000ms),
+    // not the old fixed 800ms.
+    expect(ctx!.budgetMs).toBe(2000);
+  });
+
+  it("uses the fixed untimed budget when there is no clock", async () => {
+    const t = convexTest(schema, modules);
+    const g = await t.mutation(api.games.createBotGame, { botColor: "w" }); // no timeControl ⇒ untimed
+    const ctx = await t.query(internal.bot.botContext, { gameId: g.gameId });
+    expect(ctx!.budgetMs).toBe(1000);
+  });
 });

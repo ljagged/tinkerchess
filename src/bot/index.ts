@@ -30,6 +30,7 @@ export {
 } from "./view.js";
 export { evaluate, DEFAULT_WEIGHTS, type EvalWeights } from "./evaluate.js";
 export { search, ttKey, type SearchOptions, type SearchResult } from "./search.js";
+export { moveTimeBudgetMs, UNTIMED_BUDGET_MS } from "./budget.js";
 
 /**
  * Choose the bot's action for the current position, reasoning only from honest seat
