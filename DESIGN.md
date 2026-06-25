@@ -6,8 +6,11 @@
   You see your own phased pieces and timers; the opponent gets only a one-turn,
   square-only warning. Standard chess win condition: checkmate (an enemy return
   ring on a king's square counts as a check).
-- **Who it's for:** The builder's niece and nephew first, then an open-source community.
-  Built like a real product.
+- **Who it's for:** A generic audience of competitive online chess players — people who
+  live on lichess and chess.org. (The builder's niece and nephew, rated players on those
+  sites, were the genesis and a representative archetype, not the sole audience.) Then an
+  open-source community. Built like a real product. Design for what these players already
+  know: efficient, dense, lichess-familiar layouts and conventions.
 - **Space/industry:** Online chess platforms. Peers: lichess (clean, fast, open-source),
   chess.com (rich, gamified).
 - **Project type:** Real-time web game (Convex + Next.js).
@@ -101,9 +104,37 @@ fog-filtered projection.
 
 ## Spacing
 - **Base unit:** 8px.
-- **Density:** Comfortable (roomier than lichess — audience is kids on tablets).
-- **Board squares:** 64–80px on tablet; **≥44px tap target anywhere.**
+- **Density:** Efficient and lichess-familiar. The audience lives on lichess/chess.org and
+  expects dense, fast layouts; do not pad beyond what clarity needs. (Superseded: the earlier
+  "roomier than lichess" guidance assumed a kids-on-tablets audience and no longer holds.)
+- **Board squares:** 64–80px on tablet; **≥44px tap target anywhere** (dense ≠ tiny — keep
+  tap targets honest even as density tightens).
 - **Scale:** 2xs(2) xs(4) sm(8) md(16) lg(24) xl(32) 2xl(48) 3xl(64). Panel padding 16–24px.
+
+## Forms, controls & pickers (HCI)
+Calibrated to the audience above. Named so the reasoning doesn't drift again (a roomy,
+over-segmented time-control picker is what prompted this section).
+
+- **Recognition over recall + Jakob's Law.** A self-describing option label (e.g. a `3+2`
+  time-control chip) IS the recognition cue — don't add a category header that restates what
+  the chip already says. Match patterns the audience knows from lichess/chess.org (a dense
+  preset grid, not stacked labeled rows).
+- **Gestalt — proximity & common region.** Group by layout (one shared grid/container +
+  consistent chip styling), not by redundant text headers; visual similarity already reads as
+  "one group."
+- **Chunking (Miller).** Don't give a 1–2 item group its own labeled section — the header
+  costs more parsing than it saves. Reserve sub-headers for genuinely distinct clusters.
+- **Signal-to-noise (Tufte).** Cut non-data ink: redundant labels, oversized gaps, a
+  full-width single chip. Raise the ratio of options to chrome.
+- **Fitts's Law.** Keep related options close in a compact grid to shorten pointer travel;
+  fill the container width instead of left-packing into a sparse column.
+- **Hick's Law (caveat).** A handful of options is fine — the cost is usually visual parsing,
+  not the count. Fix density and grouping before cutting options.
+
+**Preset-picker pattern:** a compact multi-column grid of equal chips that fills the
+container width; selection uses the neutral **Selected** cue (border + subtle fill + weight +
+`aria-checked`), **never a reserved state color** (cyan/red/amber/orange/teal each mean one
+game-state thing — see Color). Numeric/data chips use JetBrains Mono (`--mono`).
 
 ## Layout
 - **Approach:** Board-dominant; a single quiet right-hand panel (move list + clocks +
@@ -140,3 +171,5 @@ piece theme pickers, promotion picker, flip-board, game-over banner.
 | 2026-06-22 | Clarity-by-shape-not-color is a hard rule | Primary user is colorblind; caught faint-cyan + wash-only highlights failing in review |
 | 2026-06-22 | Cabinet Grotesk over Clash Display | Clash Display overexposed; Cabinet Grotesk same feel, distinctive, open |
 | 2026-06-22 | Coordinates in gutters; pieces ~85% of square | Colorblind-user review: in-square coords invisible, glyphs dwarfed by squares |
+| 2026-06-24 | Audience generalized to competitive lichess/chess.org players | The niece/nephew were the genesis but the product targets people like them; density + conventions calibrate to that audience, not two specific kids |
+| 2026-06-24 | Density retargeted: efficient/lichess-familiar (was "roomier than lichess") | The roomy directive was keyed to kids-on-tablets; the real audience expects dense layouts. Added Forms/HCI section + preset-picker pattern after a cluttered time-control picker |

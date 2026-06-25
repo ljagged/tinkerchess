@@ -2,12 +2,13 @@
 
 import { TIME_CONTROLS, type TimeControlId } from "@/src/timecontrol";
 
-// A lichess-style preset grid: presets grouped by category (Blitz / Rapid /
-// Classical / Untimed), each a selectable chip. The selected chip is marked by a
-// border + label state, never color alone (DESIGN.md colorblind rule). Shared by
-// the home create flow and the in-game "New game" rematch chooser.
-
-const CATEGORY_ORDER = ["Blitz", "Rapid", "Classical", "Untimed"] as const;
+// A compact preset grid (lichess-style): the six time-control chips in one
+// multi-column grid that fills the dialog width. No per-category header rows —
+// "3+2", "10+5", "Untimed" are self-describing to the audience, so the labels
+// would be redundant chrome (DESIGN.md "Forms, controls & pickers (HCI)":
+// recognition-over-recall + signal-to-noise). Chips stay in category/duration
+// order so the grouping still reads left-to-right. Selected chip is marked by a
+// NEUTRAL highlight + aria-checked, never a reserved game-state color.
 
 export function TimeControlPicker({
   value,
@@ -17,30 +18,20 @@ export function TimeControlPicker({
   onChange: (id: TimeControlId) => void;
 }) {
   return (
-    <div className="tc-picker" role="radiogroup" aria-label="Time control">
-      {CATEGORY_ORDER.map((cat) => {
-        const items = TIME_CONTROLS.filter((t) => t.category === cat);
-        if (items.length === 0) return null;
-        return (
-          <div className="tc-group" key={cat}>
-            <div className="tc-group-label">{cat}</div>
-            <div className="tc-options">
-              {items.map((t) => (
-                <button
-                  type="button"
-                  key={t.id}
-                  role="radio"
-                  aria-checked={value === t.id}
-                  className={value === t.id ? "tc-option on" : "tc-option"}
-                  onClick={() => onChange(t.id)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+    <div className="tc-grid" role="radiogroup" aria-label="Time control">
+      {TIME_CONTROLS.map((t) => (
+        <button
+          type="button"
+          key={t.id}
+          role="radio"
+          aria-checked={value === t.id}
+          aria-label={`${t.label} (${t.category})`}
+          className={value === t.id ? "tc-option on" : "tc-option"}
+          onClick={() => onChange(t.id)}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }
