@@ -474,6 +474,30 @@ button:disabled {
   font-size: 0.78rem;
   margin-right: 0.3rem;
 }
+/* A quick emote reads as a gesture, not a typed line: a large glyph on its own,
+   still tagged with who sent it. */
+.chat-msg.emote {
+  padding: 0.2rem 0.5rem;
+}
+.chat-msg.emote .chat-text {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  vertical-align: middle;
+}
+/* One-tap quick-emote buttons, between the chat log and the input. A compact wrap
+   row of equal targets (≥matches the icon-button height for honest tap targets). */
+.emote-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+.emote-btn {
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  border-radius: 10px;
+}
 .chat-input {
   flex: 1;
   min-width: 0;
@@ -699,9 +723,25 @@ button:disabled {
   margin-top: 0.3rem;
 }
 .tc-option {
-  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
   padding: 0.5rem 0.4rem;
   text-align: center;
+}
+/* The control itself ("3 + 2") is numeric data → mono; the category ("Blitz") is a
+   word label → UI font, muted and smaller (DESIGN.md: mono is numeric/data only). */
+.tc-option .tc-time {
+  font-family: var(--mono);
+}
+.tc-option .tc-cat {
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.tc-option.on .tc-cat {
+  color: var(--text);
 }
 /* Side picker (White / Black / Random): same compact preset pattern, but word
    labels use the UI font, not mono (DESIGN.md: mono is numeric/data only). */
@@ -840,7 +880,23 @@ button:disabled {
 /* Discreet tool icons + popovers (rules, spectator invite) */
 .rail-tools {
   display: flex;
+  align-items: center;
   gap: 0.5rem;
+}
+/* Static game-type badge (e.g. "Blitz · 3 + 2") at the head of the tools row, so a
+   player and any spectator see what control this game is on. Non-interactive; the
+   category is a word label, never color-only (DESIGN.md). Pushes the tool icons to
+   the right edge of the row. */
+.gametype-chip {
+  margin-right: auto;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  white-space: nowrap;
 }
 .pop-wrap {
   position: relative;

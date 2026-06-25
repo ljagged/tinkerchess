@@ -56,6 +56,22 @@ export function timeControlDef(id: string | undefined): TimeControlDef | undefin
   return TIME_CONTROLS.find((t) => t.id === id);
 }
 
+/** The category ("Blitz" / "Rapid" / …) for a stored preset id; "Untimed" for an
+ * untimed game (absent/unknown id, which is also how an untimed game reads — it
+ * stores no clock, so callers pass `undefined`). */
+export function timeControlCategory(id: string | undefined): TimeControlCategory {
+  return timeControlDef(id)?.category ?? "Untimed";
+}
+
+/** A self-contained game-type label for display, e.g. "Blitz · 3 + 2" or "Untimed".
+ * Pairs the category with the base+increment so a player reads the type AND the
+ * exact control in one chip (the lichess lobby pattern). */
+export function gameTypeLabel(id: string | undefined): string {
+  const def = timeControlDef(id);
+  if (!def || def.category === "Untimed") return "Untimed";
+  return `${def.category} · ${def.label}`;
+}
+
 /**
  * Sanitize a client-supplied time-control id to a known preset. Unknown/missing
  * ids fall back to the default — the server NEVER trusts client-supplied ms,
