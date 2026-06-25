@@ -84,11 +84,24 @@ with a shape cue.
 Two-word learnable vocabulary: **cyan = hidden/phasing (yours), orange = incoming return
 (theirs)**. Dark mode is a first-class default (deep slate, never pure black).
 
+**Clock colors (a reserved-color clarification).** The reserved hues above each mean exactly
+one *game-state* thing, so the clock must NOT borrow them for "active": the **active clock is
+emphasized with a NEUTRAL cue** (a `--selected` border/bar + a lifted surface + weight), never
+cyan or red. The one sanctioned exception is **low time = red** (`--danger`): it's a universal
+chess convention the audience expects, it lives in the panel (not on a board square, so it
+never collides with a check ring), and it is still paired with a shape cue (bold + tenths). An
+active clock that is also low shows the neutral active border AND the red low-time text.
+
 ## The Fog UI Patterns (signature)
-- **Phase Tray** — a first-class right-panel component (peer to the captured-piece tray)
-  showing *your* phased pieces at ~60% opacity, each wrapped in a cyan countdown ring with
-  a "turns left" number. This is the core UX invention: hidden-but-yours state has one
-  quiet, glanceable home, so the board stays clean.
+- **Phase return-queue** — your phased pieces as a compact horizontal queue **under the board
+  (bottom-left)**, each a cyan countdown ring + glyph + "turns left" number, **ordered
+  soonest-return first** (left-most returns next). Headed by a small cyan ring **icon**, not a
+  text label — the cyan vocabulary already says "phased/yours" (recognition over recall; see
+  Forms/HCI). Its job is *roster + return-order triage* (how many are out, what returns next),
+  which the scattered board ghosts can't give at a glance; the ghost carries *location*.
+  **Collapses entirely when you have no phased pieces** (no dead "None." box). This used to be
+  a labeled right-panel tray; it moved under the board to keep phased state next to the action
+  and free the panel for clocks + moves + chat.
 - **Ghost return-square (yours)** — on the square where your phased piece will return, a
   dashed cyan box containing the piece glyph + countdown number. Visible only to you.
 - **Warning ping (opponent's)** — on the warned square, a pulsing + dashed orange ring,
@@ -137,10 +150,18 @@ container width; selection uses the neutral **Selected** cue (border + subtle fi
 game-state thing — see Color). Numeric/data chips use JetBrains Mono (`--mono`).
 
 ## Layout
-- **Approach:** Board-dominant; a single quiet right-hand panel (move list + clocks +
-  captured tray + phase tray). Never multiple sidebars.
+- **Approach:** Board-dominant; **a single quiet right-hand panel. Never multiple sidebars.**
+- **The right panel (top → bottom):** the lichess pattern — opponent **clock** (top),
+  opponent name, the **move list** (windowed to the most recent moves, current highlighted),
+  your name, your **clock** (bottom), then **chat** below. The two clocks bracket the move
+  list so a player reads both times in one glance.
+- **Clocks are stacked, not flanking the board.** Active side marked by a border/background
+  (not by waiting for the digit to tick — see Color). Both visible together.
+- **Captured material** flanks the board (opponent's above, yours below), in the player rows.
+- **Phase pieces live UNDER the board** as a return queue (not in the panel) — see Fog UI.
 - **Coordinates:** rank numbers down the left gutter, file letters along the bottom gutter.
-- **Move-nav:** first / prev / next / last under the move list.
+- **Move list:** a short window of recent moves (≈4), current move highlighted, scrollable
+  for history. Move-nav (first / prev / next / last that rewinds the board) is deferred.
 - **Max content width:** board + one panel; let the board scale to viewport.
 - **Border radius:** sm 8px, md 14px, full 999px.
 
@@ -173,3 +194,6 @@ piece theme pickers, promotion picker, flip-board, game-over banner.
 | 2026-06-22 | Coordinates in gutters; pieces ~85% of square | Colorblind-user review: in-square coords invisible, glyphs dwarfed by squares |
 | 2026-06-24 | Audience generalized to competitive lichess/chess.org players | The niece/nephew were the genesis but the product targets people like them; density + conventions calibrate to that audience, not two specific kids |
 | 2026-06-24 | Density retargeted: efficient/lichess-familiar (was "roomier than lichess") | The roomy directive was keyed to kids-on-tablets; the real audience expects dense layouts. Added Forms/HCI section + preset-picker pattern after a cluttered time-control picker |
+| 2026-06-24 | Gameplay screen → single right panel (lichess pattern): stacked clocks bracket a windowed move list, chat below | Collapsed a two-rail layout that violated "never multiple sidebars"; clocks stacked + active-emphasized (restores the documented intent) so both times read at a glance |
+| 2026-06-24 | Phase tray → under-board return-queue (soonest first, icon-headed, collapse-empty) | Affordance pass: tray's job is roster/return-order triage, not location; moved it next to the board and dropped the redundant "Your phased pieces" label + empty "None." box |
+| 2026-06-24 | Clock active = neutral cue; low-time = red (sanctioned reuse) | Resolves the reserved-color question: active never borrows cyan/red; low-time red is the universal convention, lives in the panel (no check-ring collision), still shape-paired |
