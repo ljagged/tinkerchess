@@ -15,7 +15,10 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex && tsc --noEmit -p e2e",
     "e2e": "playwright test --config e2e/playwright.config.ts",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "experiment:gr": "tsx experiments/gr.ts",
+    "experiment:endgame": "tsx experiments/endgame.ts",
+    "experiment:stockfish": "tsx experiments/stockfish-match.ts"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
@@ -24,6 +27,8 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "convex-test": "^0.0.53",
+    "stockfish": "^18.0.8",
+    "tsx": "^4.20.6",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   },
