@@ -15,14 +15,20 @@
 
 import {
   applyAction,
+  activeMechanics,
   kingSafe,
   legalMoves,
-  legalPhaseOuts,
   pieceAt,
   positionKey,
 } from "../engine/index.js";
 import type { Action, GameState } from "../engine/index.js";
-import { DEFAULT_WEIGHTS, evaluate, type EvalWeights } from "./evaluate.js";
+import {
+  DEFAULT_WEIGHTS,
+  evaluate,
+  resolveEvalTerms,
+  type EvalWeights,
+  type MechanicEvalTerm,
+} from "./evaluate.js";
 
 const MATE = 1_000_000;
 const QUIESCE_PLY_CAP = 16;
@@ -53,6 +59,8 @@ interface TTEntry {
 
 interface Ctx {
   weights: EvalWeights;
+  /** Per-mechanic eval terms, resolved ONCE per search (finding 7), not per node. */
+  evalTerms: MechanicEvalTerm[];
   deadline: number;
   now: () => number;
   tt: Map<string, TTEntry>;
@@ -69,17 +77,24 @@ class SearchTimeout extends Error {}
  * corrupt the table (review finding F2).
  */
 export function ttKey(state: GameState): string {
-  const phased = state.phased
-    .map((p) => `${p.color}${p.type}${p.origin}:${p.returnOn}`)
-    .sort()
-    .join(",");
-  return `${positionKey(state)}#${phased}`;
+  // Each active mechanic contributes its search-relevant state digest, in pinned
+  // order (phasing's pending-return timers today). positionKey alone is the lossy
+  // REPETITION key; the mechanic digests separate positions whose visible boards
+  // match but whose futures differ (finding F2).
+  const hash = activeMechanics(state)
+    .map((m) => m.stateHash?.(state) ?? "")
+    .join("|");
+  return `${positionKey(state)}#${hash}`;
 }
 
 function candidateActions(state: GameState): Action[] {
   const actions: Action[] = [];
   for (const move of legalMoves(state)) actions.push({ kind: "move", move });
-  for (const phaseOut of legalPhaseOuts(state)) actions.push({ kind: "phaseOut", phaseOut });
+  // Mechanic-added actions (phasing's phase-outs today), in pinned order — appended
+  // AFTER moves so the candidate order, and thus the search, is unchanged.
+  for (const mechanic of activeMechanics(state)) {
+    if (mechanic.legalActions) actions.push(...mechanic.legalActions(state));
+  }
   return actions;
 }
 
@@ -128,7 +143,7 @@ function quiesce(state: GameState, alpha: number, beta: number, ply: number, ctx
   ctx.nodes++;
   if (state.status !== "active") return terminalScore(state, ply);
 
-  let best = evaluate(state, state.turn, ctx.weights); // stand-pat
+  let best = evaluate(state, state.turn, ctx.weights, ctx.evalTerms); // stand-pat
   if (best >= beta) return best;
   if (best > alpha) alpha = best;
   if (ply >= QUIESCE_PLY_CAP) return best;
@@ -213,6 +228,8 @@ export function search(state: GameState, opts: SearchOptions = {}): SearchResult
   const now = opts.now ?? (() => Date.now());
   const ctx: Ctx = {
     weights: opts.weights ?? DEFAULT_WEIGHTS,
+    // Resolve the active mechanics' eval terms once for the whole search (finding 7).
+    evalTerms: resolveEvalTerms(state),
     deadline: opts.timeBudgetMs === undefined ? Infinity : now() + opts.timeBudgetMs,
     now,
     tt: new Map(),

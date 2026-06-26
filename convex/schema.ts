@@ -69,6 +69,13 @@ export const ruleConfigV = v.object({
   }),
 });
 
+// The one-time SETUP axis (mirrors engine SetupConfig). `position` is the Chess960
+// number (Stage 2); absent for classical. Optional on the row for back-compat.
+export const setupConfigV = v.object({
+  id: v.string(),
+  position: v.optional(v.number()),
+});
+
 export const gameStateV = v.object({
   board: v.array(v.union(pieceV, v.null())),
   // Optional for back-compat; engine.createGame() always sets it on new games.
@@ -97,6 +104,13 @@ export const gameStateV = v.object({
   // Position keys for threefold-repetition (one per position reached). Optional
   // for back-compat; the engine seeds it on new games.
   history: v.optional(v.array(v.string())),
+  // --- moddable axes (decision 4: named optional fields, not a config restructure) ---
+  // Active mechanics in pinned fold order; absent ⇒ ["phasing"]. The setup that laid
+  // out the board; absent ⇒ classical. The moddable-engine schema version (decision 3);
+  // absent ⇒ legacy. All optional so games stored before this refactor read correctly.
+  mechanics: v.optional(v.array(v.string())),
+  setup: v.optional(setupConfigV),
+  schemaVersion: v.optional(v.number()),
 });
 
 // Derived event log (what an action actually did, all consequences resolved).
@@ -222,6 +236,12 @@ export default defineSchema({
     // Why the archived game ended; absent if it was archived mid-game (rematch).
     endReason: v.optional(endReasonV),
     config: v.optional(ruleConfigV),
+    // The moddable axes the game ran under — needed to replay it faithfully (a 960
+    // setup or non-phasing mechanic set changes the derived states). Optional for
+    // back-compat with matches archived before this refactor.
+    setup: v.optional(setupConfigV),
+    mechanics: v.optional(v.array(v.string())),
+    schemaVersion: v.optional(v.number()),
     whiteToken: v.union(v.string(), v.null()),
     blackToken: v.union(v.string(), v.null()),
     log: v.array(

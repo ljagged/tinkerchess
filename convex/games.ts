@@ -435,7 +435,12 @@ export const getMatchReplay = query({
     if (!match) return null;
 
     const actions = match.log.map((row) => recordedToAction(row.action));
-    let state = engine.createGame(match.config);
+    // Rebuild under the same setup + mechanics the match ran (absent ⇒ classical +
+    // phasing), so the deterministic replay reproduces the archived states exactly.
+    let state = engine.createGame(match.config, {
+      setup: match.setup,
+      mechanics: match.mechanics,
+    });
     const frames = [replayFrame(state, perspective)];
     for (const action of actions) {
       state = engine.applyAction(state, action);
@@ -832,6 +837,11 @@ export const newGame = mutation({
         status: game.state.status,
         endReason: game.state.endReason,
         config: game.state.config,
+        // Carry the moddable axes so the match replays faithfully (setup + mechanics
+        // change the derived states; schemaVersion records the shape it ran under).
+        setup: game.state.setup,
+        mechanics: game.state.mechanics,
+        schemaVersion: game.state.schemaVersion,
         whiteToken: game.whiteToken,
         blackToken: game.blackToken,
         log: moves.map((m) => ({
@@ -859,8 +869,12 @@ export const newGame = mutation({
 
     const initiatorIsWhite = Math.random() < 0.5;
     await ctx.db.patch("games", gameId, {
-      // Carry the ruleset forward — a rematch keeps the same Tier-1 settings.
-      state: engine.createGame(game.state.config),
+      // Carry the ruleset + moddable axes forward — a rematch keeps the same Tier-1
+      // settings, setup, and mechanics.
+      state: engine.createGame(game.state.config, {
+        setup: game.state.setup,
+        mechanics: game.state.mechanics,
+      }),
       whiteToken: initiatorIsWhite ? game.initiatorToken : game.opponentToken,
       blackToken: initiatorIsWhite ? game.opponentToken : game.initiatorToken,
       // `undefined` clears any prior clock/job so an untimed rematch is truly untimed.

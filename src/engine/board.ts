@@ -1,7 +1,13 @@
 // Board geometry helpers and the initial position.
 
-import { DEFAULT_RULE_CONFIG } from "./types.js";
-import type { GameState, Piece, RuleConfig, SquareIndex } from "./types.js";
+import {
+  DEFAULT_RULE_CONFIG,
+  DEFAULT_MECHANICS,
+  DEFAULT_SETUP,
+  SCHEMA_VERSION,
+} from "./types.js";
+import type { GameState, Piece, RuleConfig, SetupConfig, SquareIndex } from "./types.js";
+import { getSetup, classicalSetup } from "./setup.js";
 
 export const FILES = ["a", "b", "c", "d", "e", "f", "g", "h"] as const;
 
@@ -41,10 +47,6 @@ export function pieceAt(board: (Piece | null)[], sq: SquareIndex): Piece | null 
   return p;
 }
 
-function emptyBoard(): (Piece | null)[] {
-  return new Array<Piece | null>(64).fill(null);
-}
-
 /**
  * A compact key identifying a position for threefold-repetition: the in-play
  * board, side to move, castling rights, and en-passant target. Phased pieces are
@@ -66,28 +68,37 @@ export function positionKey(state: GameState): string {
   return `${board}|${state.turn}|${castle}|${ep}`;
 }
 
-const BACK_RANK: Piece["type"][] = ["r", "n", "b", "q", "k", "b", "n", "r"];
-
 function cloneConfig(config: RuleConfig): RuleConfig {
   return { maxPhaseDuration: { ...config.maxPhaseDuration } };
 }
 
+/** Options for the moddable axes (orthogonal to phasing's RuleConfig). */
+export interface GameOptions {
+  /** The starting-position setup (default: classical). */
+  setup?: SetupConfig;
+  /** The active mechanics, in pinned order (default: ["phasing"]). */
+  mechanics?: string[];
+}
+
 /**
- * The standard chess starting position, wrapped in a fresh GameState. An optional
- * RuleConfig sets the game's ruleset (Tier-1 Settings); defaults to
- * DEFAULT_RULE_CONFIG. The config is cloned so callers can't mutate engine state.
+ * A fresh GameState for the chosen setup. `config` is phasing's ruleset (Tier-1
+ * Settings, default DEFAULT_RULE_CONFIG); `options` selects the SETUP and the active
+ * MECHANICS (defaults preserve classical + phasing — today's behavior exactly). The
+ * board is laid out by the setup registry; config is cloned so callers can't mutate
+ * engine state. Every new game is stamped with the current SCHEMA_VERSION (decision 3).
  */
-export function initialState(config: RuleConfig = DEFAULT_RULE_CONFIG): GameState {
-  const board = emptyBoard();
-  for (let file = 0; file < 8; file++) {
-    board[squareIndex(file, 0)] = { color: "w", type: BACK_RANK[file]! };
-    board[squareIndex(file, 1)] = { color: "w", type: "p" };
-    board[squareIndex(file, 6)] = { color: "b", type: "p" };
-    board[squareIndex(file, 7)] = { color: "b", type: BACK_RANK[file]! };
-  }
+export function initialState(
+  config: RuleConfig = DEFAULT_RULE_CONFIG,
+  options?: GameOptions,
+): GameState {
+  const setup = options?.setup ?? DEFAULT_SETUP;
+  const built = (getSetup(setup.id) ?? classicalSetup).build(setup);
   const state: GameState = {
-    board,
+    board: built.board,
     config: cloneConfig(config),
+    mechanics: (options?.mechanics ?? DEFAULT_MECHANICS).slice(),
+    setup: { ...setup },
+    schemaVersion: SCHEMA_VERSION,
     turn: "w",
     status: "active",
     lastEvent: null,
@@ -109,6 +120,9 @@ export function cloneState(state: GameState): GameState {
     // Preserve config faithfully (undefined for legacy states; the engine treats
     // absence as DEFAULT_RULE_CONFIG).
     config: state.config ? cloneConfig(state.config) : undefined,
+    mechanics: state.mechanics ? state.mechanics.slice() : undefined,
+    setup: state.setup ? { ...state.setup } : undefined,
+    schemaVersion: state.schemaVersion,
     turn: state.turn,
     status: state.status,
     endReason: state.endReason,

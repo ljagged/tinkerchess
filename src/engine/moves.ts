@@ -21,6 +21,7 @@ import {
 } from "./board.js";
 import { isAttacked } from "./attacks.js";
 import { kingSafe, warningSquaresFor } from "./phase.js";
+import { augmentsActive, augmentedMoves } from "./mechanic.js";
 import type {
   Color,
   GameEvent,
@@ -56,6 +57,16 @@ const PROMO_TYPES: ReadonlyArray<Exclude<PieceType, "p" | "k">> = ["q", "r", "b"
 export function generateMoves(state: GameState, from: SquareIndex): Move[] {
   const piece = pieceAt(state.board, from);
   if (!piece) return [];
+  const moves = classicalMoves(state, from, piece);
+  // The decision-1 fold: a move-augmenting mechanic (boost; Stage 3) contributes the
+  // SAME function isAttacked folds over, so move-gen and check detection never desync.
+  // Gated — dormant (zero cost) when no augmenting mechanic is active.
+  if (augmentsActive(state)) moves.push(...augmentedMoves(state, from, piece));
+  return moves;
+}
+
+/** The always-on classical pseudo-moves for `piece` on `from`. */
+function classicalMoves(state: GameState, from: SquareIndex, piece: Piece): Move[] {
   switch (piece.type) {
     case "p":
       return pawnMoves(state, from, piece.color);

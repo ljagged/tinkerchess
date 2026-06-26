@@ -41,3 +41,22 @@ export {
 export type { Viewer, GameView, ViewPhasedPiece, RevealView, RevealPhasedPiece } from "./game.js";
 export { toNotation, toSeatNotation } from "./notation.js";
 export type { NotationOptions } from "./notation.js";
+export {
+  registerMechanic,
+  getMechanic,
+  allMechanics,
+  activeMechanics,
+  activeMechanicIds,
+  augmentsActive,
+} from "./mechanic.js";
+export type { Mechanic } from "./mechanic.js";
+export { phaseMechanic } from "./phase.js";
+export {
+  registerSetup,
+  getSetup,
+  classicalSetup,
+  buildFromBackRank,
+  homeFilesFromBackRank,
+} from "./setup.js";
+export type { Setup, BuiltSetup, CastlingHomeFiles } from "./setup.js";
+export type { GameOptions } from "./board.js";
