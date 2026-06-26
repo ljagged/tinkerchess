@@ -43,6 +43,13 @@ export interface EvalWeights {
   threatAbsence: Record<PieceType, number>;
   /** Ring-near-king weight (§5.4); doubled when the return is imminent (a live ring). */
   ringNearKing: number;
+  /**
+   * EXPERIMENT KNOB — flat centipawn bonus per OWN phased piece. Default 0, so the
+   * term vanishes and play is byte-identical to the shipped bot. Raising it offsets
+   * the §5.1 discount and makes the bot phase more aggressively, to study whether
+   * more phasing helps (experiments/ only — never set in production play).
+   */
+  phaseBias: number;
 }
 
 export const DEFAULT_WEIGHTS: EvalWeights = {
@@ -52,6 +59,7 @@ export const DEFAULT_WEIGHTS: EvalWeights = {
   threatTempo: 30,
   threatAbsence: { p: 100, n: 40, b: 40, r: 60, q: 80, k: 0 },
   ringNearKing: 45,
+  phaseBias: 0,
 };
 
 const sign = (c: Color): number => (c === "w" ? 1 : -1);
@@ -150,12 +158,23 @@ function ringTerm(state: GameState, w: EvalWeights): number {
   return score;
 }
 
+/** EXPERIMENT-only term: a flat bonus per own phased piece (w.phaseBias). Zero by
+ *  default, so it vanishes and the eval is identical to the shipped bot. Because the
+ *  search root evaluates EVERY candidate action, a positive bias is enough to make
+ *  the bot choose phase-outs — no move-ordering change needed. */
+function phaseBiasTerm(state: GameState, w: EvalWeights): number {
+  if (w.phaseBias === 0) return 0;
+  let score = 0;
+  for (const ph of state.phased) score += sign(ph.color) * w.phaseBias;
+  return score;
+}
+
 /**
  * Evaluate `state` from `color`'s perspective (positive favours `color`). Note
  * §5.5 (phase-out tempo cost) is realised structurally rather than as a term: a
  * phased own piece is already discounted here (§5.1), and search orders phase-outs
  * last — so a speculative phase-out scores worse than a developing move without a
- * dedicated penalty.
+ * dedicated penalty. (The phaseBias term is an opt-in experiment knob, 0 by default.)
  */
 export function evaluate(
   state: GameState,
@@ -166,6 +185,7 @@ export function evaluate(
     materialTerm(state, weights) +
     positionalTerm(state, weights) +
     threatTerm(state, weights) +
-    ringTerm(state, weights);
+    ringTerm(state, weights) +
+    phaseBiasTerm(state, weights);
   return sign(color) * whiteRelative;
 }
