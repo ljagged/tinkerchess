@@ -37,3 +37,35 @@ jobs:
           # throws if it's missing). CI does not deploy, so a placeholder URL is
           # enough to let the production build and its prerender succeed.
           NEXT_PUBLIC_CONVEX_URL: https://placeholder.convex.cloud
+
+  # Browser acceptance tests (Playwright). Boots a local anonymous Convex backend
+  # in global-setup and drives chess through the UI. NON-BLOCKING for now
+  # (continue-on-error) while the suite proves stable — see the plan TODO to
+  # promote it to a required gate after a green streak.
+  e2e:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc # Node 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E (boots a local anonymous Convex backend)
+        run: npm run e2e
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

@@ -1359,7 +1359,15 @@ export function GameClient({ gameId }: { gameId: string }) {
   const phaseable = rulesOrder.filter(([t]) => view.rules[t] > 0);
 
   return (
-    <main className="game">
+    <main
+      className="game"
+      // Always-on machine-value hooks for acceptance tests (mirror backend enums,
+      // never UI copy): which side is to move, the game status, and why it ended.
+      // Tests sync on data-turn and assert on data-game-status/data-end-reason.
+      data-turn={view.turn}
+      data-game-status={view.status}
+      data-end-reason={view.endReason ?? ""}
+    >
       {view.status !== "active" && (
         <div className="gameover-banner panel">
           <div className="gameover-status">{status}</div>
