@@ -115,6 +115,22 @@ export const SCHEMA_VERSION = 1;
 /** The default active mechanics — phasing only, preserving today's behavior. */
 export const DEFAULT_MECHANICS: string[] = ["phasing"];
 
+/** A piece type that can receive a boost (everything but a pawn). */
+export type FairyBase = Exclude<PieceType, "p">;
+
+/**
+ * A standing boost on a single piece (the boost mechanic's named state, decision 4).
+ * Tracked by the boosted piece's CURRENT square (relocated when it moves) and the
+ * underlying piece type, which selects the fairy upgrade (bishop→Dragon Horse, etc.).
+ * The buff ends once the owner's `turnsTaken` reaches `expiresOn`.
+ */
+export interface BoostState {
+  color: Color;
+  square: SquareIndex;
+  base: FairyBase;
+  expiresOn: number;
+}
+
 /** The default setup — classical chess. */
 export const DEFAULT_SETUP: SetupConfig = { id: "classical" };
 
@@ -156,6 +172,12 @@ export interface GameState {
   lastEvent: SelfCaptureEvent | null;
   /** Pieces currently phased out, for both colors. */
   phased: PhasedPiece[];
+  /**
+   * Standing boosts (the boost mechanic's named state). Optional; absent ⇒ no boosts.
+   * Its presence is the cheap gate for the decision-1 attack/move fold: classical and
+   * phasing-only games never have it, so the kernel's augmentation path stays dormant.
+   */
+  boosts?: BoostState[];
   castling: CastlingRights;
   /** En-passant target square (the square a pawn skipped over), or null. */
   enPassant: SquareIndex | null;

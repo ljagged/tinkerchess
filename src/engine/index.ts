@@ -59,6 +59,7 @@ export {
 } from "./mechanic.js";
 export type { Mechanic } from "./mechanic.js";
 export { phaseMechanic } from "./phase.js";
+export { boostMechanic, boostAt, isBoosted, fairyExtraTargets } from "./boost.js";
 export {
   registerSetup,
   getSetup,

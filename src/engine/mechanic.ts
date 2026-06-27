@@ -127,7 +127,11 @@ export function activeMechanics(state: GameState): Mechanic[] {
  */
 export function augmentsActive(state: GameState): boolean {
   if (AUGMENTING_IDS.size === 0) return false;
-  for (const id of activeMechanicIds(state)) {
+  // Read state.mechanics directly (no `?? default` allocation on the hot path): a
+  // legacy/default state has no mechanics field and is never augmenting (phasing only).
+  const ids = state.mechanics;
+  if (!ids) return false;
+  for (const id of ids) {
     if (AUGMENTING_IDS.has(id)) return true;
   }
   return false;
