@@ -20,7 +20,7 @@
 // notation land in the following increments.
 
 import { cloneState, fileOf, onBoard, pieceAt, rankOf, squareIndex } from "./board.js";
-import { applyMove, deriveMoveEvent, isLegalMove } from "./moves.js";
+import { applyMove, deriveMoveEvent, isLegalMove, legalMovesFrom } from "./moves.js";
 import { kingSafe } from "./phase.js";
 import { registerMechanic, type Mechanic } from "./mechanic.js";
 import type {
@@ -249,6 +249,33 @@ export function legalBoosts(state: GameState): BoostInput[] {
     if (!fodder) continue;
     const input: BoostInput = { target: sq, fodder };
     if (validateBoost(state, input).ok) out.push(input);
+  }
+  return out;
+}
+
+/**
+ * Legal IMMEDIATE boosts (boost + move this turn) for the side to move — the "one-shot"
+ * action space: each boostable piece, paid at the +premium price with canonical fodder,
+ * crossed with every move its fairy form can now make. Not folded into the bot's
+ * per-node candidates (too wide); used by the Stage-5 one-shot harness to ask whether a
+ * boost can force a result in a single turn.
+ */
+export function legalImmediateBoosts(state: GameState): BoostInput[] {
+  if (state.status !== "active") return [];
+  const out: BoostInput[] = [];
+  for (let sq = 0; sq < 64; sq++) {
+    const p = pieceAt(state.board, sq);
+    if (!p || p.color !== state.turn || p.type === "p" || p.type === "k") continue;
+    if (boostAt(state, sq, p.color)) continue;
+    const fodder = findFodder(state, p.color, boostCost(p.type as FairyBase, true), sq);
+    if (!fodder) continue;
+    // Apply the boost (no move yet) to read the boosted piece's now-legal moves.
+    const probe = applyBoostMechanics(state, { target: sq, fodder });
+    if (!probe.ok) continue;
+    for (const m of legalMovesFrom(probe.state, sq)) {
+      const input: BoostInput = { target: sq, fodder, move: m };
+      if (validateBoost(state, input).ok) out.push(input);
+    }
   }
   return out;
 }

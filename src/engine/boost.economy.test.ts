@@ -9,6 +9,7 @@ import {
   applyActionWithEvents,
   validateBoost,
   legalBoosts,
+  legalImmediateBoosts,
   boostAt,
   parseSquare,
   pieceAt,
@@ -16,6 +17,7 @@ import {
 import type { Action, BoostInput, Color, GameState, Piece } from "./index.js";
 
 const sq = parseSquare;
+const P = (color: Color, type: Piece["type"]): Piece => ({ color, type });
 /** A fresh standard game with boost (and phasing) active. */
 const boostGame = (): GameState => createGame(undefined, { mechanics: ["phasing", "boost"] });
 const boostAction = (boost: BoostInput): Action => ({ kind: "boost", boost });
@@ -118,6 +120,41 @@ describe("boost — immediate (boost + move same turn) costs the premium", () =>
     const g = boostGame();
     const input: BoostInput = { target: sq("b1"), fodder: [sq("a2")], move: { from: sq("b1"), to: sq("c3") } };
     expect(validateBoost(g, input).ok).toBe(false); // 1 ≠ 1 + 2
+  });
+});
+
+describe("boost — immediate one-shots (Stage 5 enumeration)", () => {
+  function bare(turn: Color = "w"): GameState {
+    return {
+      board: new Array<Piece | null>(64).fill(null),
+      config: undefined,
+      mechanics: ["phasing", "boost"],
+      turn,
+      status: "active",
+      lastEvent: null,
+      phased: [],
+      castling: { wK: false, wQ: false, bK: false, bQ: false },
+      enPassant: null,
+      turnsTaken: { w: 0, b: 0 },
+      captured: { w: [], b: [] },
+      history: [],
+    };
+  }
+
+  it("enumerates an immediate boost that delivers mate this turn (Dragon Horse wazir mate)", () => {
+    // White bishop f7 + king g6 cover the escape squares; boosting the bishop to a
+    // Dragon Horse lets it step wazir f7→g7, mating Kh8 (g7 covers h8/g8; Kg6 covers
+    // h7/h6/g6). Pay the immediate price (1 + 2 = 3) with three pawns.
+    const s = bare("w");
+    s.board[sq("f7")] = P("w", "b");
+    s.board[sq("g6")] = P("w", "k");
+    s.board[sq("h8")] = P("b", "k");
+    for (const p of ["a2", "b2", "c2"]) s.board[sq(p)] = P("w", "p");
+    const oneShots = legalImmediateBoosts(s).filter(
+      (b) => applyAction(s, { kind: "boost", boost: b }).status === "w_won",
+    );
+    expect(oneShots.length).toBeGreaterThan(0);
+    expect(oneShots.some((b) => b.move?.to === sq("g7"))).toBe(true);
   });
 });
 

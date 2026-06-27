@@ -6,11 +6,14 @@
 // added work to the hot path (isAttacked / applyAction / evaluate) would show up as a
 // nodes/sec drop here.
 //
-// nodes/sec is hardware-dependent (and lower under the vitest runner than standalone),
-// so the floor is deliberately generous — it catches a gross per-node regression (e.g.
-// an ungated fold on the hot path), not a few percent. The exact NODE COUNT below is
-// the strong, machine-independent lock; the nps floor is a coarse speed guard. The
-// measured value is logged so a soft drift is visible in CI output even when it passes.
+// nodes/sec is hardware-dependent: a slow CI runner measured ~4.8k nps where this dev
+// box sees ~12k, so an absolute floor sensitive enough to catch a 2x regression also
+// flakes on slow hardware — the two goals conflict for an absolute gate. So the EXACT
+// NODE COUNT is the hard, machine-independent gate (it locks search shape outright),
+// and the nps check is only a CATASTROPHE backstop (a 5-10x blowup, e.g. an ungated
+// fold or an accidental O(n) in the hot path). The measured nps is logged every run so
+// a real per-node slowdown is still visible as a CI trend even though it won't fail the
+// build at a few-percent level.
 
 import { describe, it, expect } from "vitest";
 import { createGame, applyAction } from "../engine/index.js";
@@ -29,10 +32,12 @@ function randomState(seed: number, plies: number): GameState {
   return state;
 }
 
-const NODES_FLOOR_NPS = 5000;
+// Catastrophe backstop only (see header): ~4-5x below the slowest observed CI runner,
+// so it never flakes on hardware variance but still trips on a gross blowup.
+const NODES_FLOOR_NPS = 1000;
 
 describe("bot perf gate (Stage 1)", () => {
-  it("visits the exact baseline node total and clears the nodes/sec floor", () => {
+  it("visits the exact baseline node total and clears the catastrophe nps floor", () => {
     const states = [createGame(), randomState(13, 20), randomState(99, 14)];
     for (const s of states) search(s, { maxDepth: 3 }); // warm up the JIT
 
@@ -45,9 +50,9 @@ describe("bot perf gate (Stage 1)", () => {
     // eslint-disable-next-line no-console
     console.log(`[perf gate] nodes=${nodes} ms=${ms.toFixed(0)} nps=${nps}`);
 
-    // Behavior lock: this total is fully deterministic and must not move.
+    // Behavior lock: this total is fully deterministic and must not move (the real gate).
     expect(nodes).toBe(43325);
-    // Perf guard: generous floor, hardware-independent enough to not flake.
+    // Catastrophe backstop only — hardware-independent enough to never flake in CI.
     expect(nps).toBeGreaterThan(NODES_FLOOR_NPS);
   });
 });

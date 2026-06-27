@@ -65,6 +65,7 @@ export {
   isBoosted,
   validateBoost,
   legalBoosts,
+  legalImmediateBoosts,
   fairyExtraTargets,
 } from "./boost.js";
 export type { BoostCheck } from "./boost.js";
