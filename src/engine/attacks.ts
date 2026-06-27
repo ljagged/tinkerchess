@@ -6,6 +6,7 @@
 // separately as a per-square check, NOT in attack generation — see kingSafe.)
 
 import { fileOf, onBoard, pieceAt, rankOf, squareIndex } from "./board.js";
+import { augmentsActive, augmentedAttack } from "./mechanic.js";
 import type { Color, GameState, SquareIndex } from "./types.js";
 
 const KNIGHT_OFFSETS: ReadonlyArray<[number, number]> = [
@@ -62,6 +63,12 @@ export function isAttacked(
   // Sliding pieces: diagonal (bishop/queen) and orthogonal (rook/queen).
   if (slidingHit(state, f, r, DIAGONALS, byColor, "b")) return true;
   if (slidingHit(state, f, r, ORTHOGONALS, byColor, "r")) return true;
+
+  // The decision-1 fold (other half): an augmenting mechanic's pieces attack via the
+  // SAME function move-gen uses, so a boosted piece both gives check and bars the king
+  // from moving into its line. Checked LAST and gated, so classical/phasing pay only a
+  // single set-size test on the hot path.
+  if (augmentsActive(state) && augmentedAttack(state, sq, byColor)) return true;
 
   return false;
 }

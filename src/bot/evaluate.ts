@@ -18,6 +18,7 @@ import {
   pieceAt,
   rankOf,
   validatePhaseOut,
+  activeMechanicIds,
   DEFAULT_RULE_CONFIG,
 } from "../engine/index.js";
 import type { Color, GameState, PieceType, RuleConfig, SquareIndex } from "../engine/index.js";
@@ -169,23 +170,59 @@ function phaseBiasTerm(state: GameState, w: EvalWeights): number {
   return score;
 }
 
+// --- per-mechanic eval-term fold (the bot-side half of the mechanic registry) ----
+// Eval weights are a bot-layer concept, so a mechanic registers its eval contribution
+// HERE, keyed by its engine mechanic id, rather than on the engine Mechanic object.
+// A term is WHITE-RELATIVE and is summed AFTER the kernel terms, in pinned (config)
+// order — so adding a mechanic never perturbs the existing terms' float arithmetic
+// (decision 2 / the determinism golden). Phasing's own terms (ring, phaseBias) remain
+// inline as the last kernel terms precisely to keep that arithmetic byte-stable; the
+// fold below is empty until a new mechanic (boost, Stage 3) registers a term.
+export type MechanicEvalTerm = (state: GameState, weights: EvalWeights) => number;
+const MECHANIC_EVAL_TERMS = new Map<string, MechanicEvalTerm>();
+
+/** Register a mechanic's white-relative eval contribution (Stage 3+). */
+export function registerMechanicEval(id: string, term: MechanicEvalTerm): void {
+  MECHANIC_EVAL_TERMS.set(id, term);
+}
+
+/**
+ * The active mechanics' eval terms for `state`, in pinned order. Resolve this ONCE
+ * per search (not per node — finding 7) and hand the array to `evaluate`.
+ */
+export function resolveEvalTerms(state: GameState): MechanicEvalTerm[] {
+  const out: MechanicEvalTerm[] = [];
+  for (const id of activeMechanicIds(state)) {
+    const term = MECHANIC_EVAL_TERMS.get(id);
+    if (term) out.push(term);
+  }
+  return out;
+}
+
 /**
  * Evaluate `state` from `color`'s perspective (positive favours `color`). Note
  * §5.5 (phase-out tempo cost) is realised structurally rather than as a term: a
  * phased own piece is already discounted here (§5.1), and search orders phase-outs
  * last — so a speculative phase-out scores worse than a developing move without a
  * dedicated penalty. (The phaseBias term is an opt-in experiment knob, 0 by default.)
+ *
+ * `evalTerms` is the resolved per-mechanic fold (see `resolveEvalTerms`); pass it
+ * pre-resolved from the search to avoid resolving per node. Omitted ⇒ resolved here
+ * (the convenient path for tests and one-off eval calls).
  */
 export function evaluate(
   state: GameState,
   color: Color,
   weights: EvalWeights = DEFAULT_WEIGHTS,
+  evalTerms?: MechanicEvalTerm[],
 ): number {
-  const whiteRelative =
+  let whiteRelative =
     materialTerm(state, weights) +
     positionalTerm(state, weights) +
     threatTerm(state, weights) +
     ringTerm(state, weights) +
     phaseBiasTerm(state, weights);
+  const terms = evalTerms ?? resolveEvalTerms(state);
+  for (const term of terms) whiteRelative += term(state, weights);
   return sign(color) * whiteRelative;
 }

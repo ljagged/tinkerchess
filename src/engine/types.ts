@@ -77,14 +77,50 @@ export interface RuleConfig {
   maxPhaseDuration: Record<PieceType, number>;
 }
 
+/**
+ * The one-time SETUP axis (which starting position). Classical is the default; the
+ * Chess960 setup (Stage 2) sets `position` to a Scharnagl number or shuffles. Stored
+ * as a named optional field on GameState (absence ⇒ classical), so castling/home-file
+ * logic and replay can read the chosen back rank without a config restructure.
+ */
+export interface SetupConfig {
+  id: string; // "classical" | "chess960"
+  /** Chess960 position number (0..959) or omitted/undefined for classical. */
+  position?: number;
+}
+
+/**
+ * The moddable-engine schema version, stamped on every new game/match (decision 3).
+ * Bumped when the persisted Action/GameEvent/state shape changes in a way replay must
+ * branch on. Legacy rows lack it (treated as version 0 / classical+phasing).
+ */
+export const SCHEMA_VERSION = 1;
+
+/** The default active mechanics — phasing only, preserving today's behavior. */
+export const DEFAULT_MECHANICS: string[] = ["phasing"];
+
+/** The default setup — classical chess. */
+export const DEFAULT_SETUP: SetupConfig = { id: "classical" };
+
 export interface GameState {
   /** 64 squares; holds only IN-PLAY pieces. Phased pieces are absent here. */
   board: (Piece | null)[];
   /**
-   * The active ruleset. Optional for back-compat with games stored before this
-   * field existed; absence is treated as DEFAULT_RULE_CONFIG everywhere.
+   * Phasing's ruleset (Tier-1 Settings). Optional for back-compat with games stored
+   * before this field existed; absence is treated as DEFAULT_RULE_CONFIG everywhere.
+   * This stays phasing's per-mechanic config; the moddable axes live in the named
+   * fields below (decision 4: named optional fields, not a config restructure).
    */
   config?: RuleConfig;
+  /**
+   * The active mechanics, in pinned (fold) order. Optional for back-compat; absence
+   * ⇒ DEFAULT_MECHANICS (["phasing"]), preserving today's behavior exactly.
+   */
+  mechanics?: string[];
+  /** The starting-position setup. Optional; absence ⇒ DEFAULT_SETUP (classical). */
+  setup?: SetupConfig;
+  /** Moddable-engine schema version (decision 3). Optional; absence ⇒ legacy (0). */
+  schemaVersion?: number;
   /** Whose turn it is to act. */
   turn: Color;
   status: GameStatus;

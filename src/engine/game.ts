@@ -18,15 +18,10 @@
 // same adjudication, so an enemy return never fires against a live king.
 
 import { cloneState, initialState, pieceAt, positionKey } from "./board.js";
+import type { GameOptions } from "./board.js";
 import { applyMove, deriveMoveEvent, legalMovesFrom, isLegalMove } from "./moves.js";
-import {
-  ownPhased,
-  resolvePhaseInsWithEvents,
-  applyPhaseOut,
-  derivePhaseOutEvent,
-  kingSafe,
-  warningSquaresFor,
-} from "./phase.js";
+import { ownPhased, kingSafe, warningSquaresFor } from "./phase.js";
+import { activeMechanics, mechanicForAction } from "./mechanic.js";
 import type {
   Action,
   Color,
@@ -41,9 +36,13 @@ import type {
   SquareIndex,
 } from "./types.js";
 
-/** Start a fresh game, optionally with a custom ruleset (Tier-1 Settings). */
-export function createGame(config?: RuleConfig): GameState {
-  return initialState(config);
+/**
+ * Start a fresh game. `config` is phasing's ruleset (Tier-1 Settings); `options`
+ * selects the moddable axes — the starting-position setup and the active mechanics
+ * (both default to classical + phasing, preserving today's behavior).
+ */
+export function createGame(config?: RuleConfig, options?: GameOptions): GameState {
+  return initialState(config, options);
 }
 
 export class IllegalActionError extends Error {}
@@ -76,8 +75,15 @@ export function applyActionWithEvents(
     next = applyMove(state, action.move);
     events.push(deriveMoveEvent(state, action.move));
   } else {
-    next = applyPhaseOut(state, action.phaseOut); // validates internally, throws if illegal
-    events.push(derivePhaseOutEvent(state, action.phaseOut)); // derive from untouched pre-state
+    // A non-move action is owned by a mechanic (phasing's phase-out today). The
+    // mechanic validates internally and derives its own initiating event(s).
+    const mechanic = mechanicForAction(state, action);
+    if (!mechanic?.applyAction) {
+      throw new IllegalActionError(`no mechanic owns action kind "${action.kind}"`);
+    }
+    const applied = mechanic.applyAction(state, action);
+    next = applied.state;
+    events.push(...applied.events);
   }
 
   // The self-capture notice reflects only the action just applied.
@@ -85,10 +91,14 @@ export function applyActionWithEvents(
 
   next.turnsTaken[mover] += 1;
 
-  // End-of-turn phase-ins for the mover (S5 table; never ends the game).
-  const resolved = resolvePhaseInsWithEvents(next, mover);
-  next = resolved.state;
-  events.push(...resolved.events);
+  // End-of-turn ticks for the mover across active mechanics, in pinned order
+  // (phasing's due phase-ins today; S5 table — never ends the game).
+  for (const mechanic of activeMechanics(next)) {
+    if (!mechanic.onTurnEnd) continue;
+    const ticked = mechanic.onTurnEnd(next, mover);
+    next = ticked.state;
+    events.push(...ticked.events);
+  }
 
   // Pass to the opponent and adjudicate the position they now face.
   next.turn = mover === "w" ? "b" : "w";

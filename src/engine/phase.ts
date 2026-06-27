@@ -15,10 +15,13 @@
 // Neither function flips the turn nor ends the game; game.ts orchestrates turn
 // order and adjudicates checkmate / stalemate / repetition.
 
-import { cloneState, pieceAt } from "./board.js";
+import { cloneState, pieceAt, toAlgebraic } from "./board.js";
 import { isAttacked, findKing } from "./attacks.js";
 import { DEFAULT_RULE_CONFIG } from "./types.js";
+import { registerMechanic, type Mechanic } from "./mechanic.js";
+import { pieceSym, capturedSym, type NotationOptions } from "./notation.js";
 import type {
+  Action,
   Color,
   GameEvent,
   GameState,
@@ -277,3 +280,72 @@ export function warningSquaresFor(state: GameState, viewer: Color): SquareIndex[
     .filter((p) => p.color !== viewer && p.returnOn === state.turnsTaken[p.color] + 1)
     .map((p) => p.origin);
 }
+
+/**
+ * Render a phasing event (phase-out / phase-in) as a move-log string. Pure; the
+ * notation-glyph half lives in notation.ts (shared with move rendering). The
+ * kernel renders "move" events, so this returns null for them.
+ */
+function renderPhaseEvent(event: GameEvent, opts: NotationOptions): string | null {
+  const fig = !!opts.figurine;
+  if (event.kind === "phaseOut") {
+    return `${pieceSym(event.piece, event.color, fig)}${toAlgebraic(event.from)}↑${event.duration}`;
+  }
+  if (event.kind === "phaseIn") {
+    const base = `${pieceSym(event.piece, event.color, fig)}↓${toAlgebraic(event.to)}`;
+    if (event.selfDestruct) return `${base}(lost)`;
+    let s = base;
+    if (event.capture) s += `x${capturedSym(event.capture.type, event.capture.color, fig)}`;
+    if (event.selfCapture) s += "(self)";
+    if (event.checkmate) s += "#";
+    else if (event.check) s += "+";
+    return s;
+  }
+  return null;
+}
+
+/**
+ * Phasing as plugin #1 (Stage 1). The kernel routes its seams through this object;
+ * every hook delegates to the functions above, so behavior is unchanged. Phasing
+ * does NOT augment piece movement, so it omits `pieceMovesAndAttacks` — the kernel's
+ * attack fold stays dormant and classical/phasing play pays nothing.
+ */
+export const phaseMechanic: Mechanic = {
+  id: "phasing",
+
+  legalActions(state) {
+    return legalPhaseOuts(state).map((phaseOut) => ({ kind: "phaseOut", phaseOut }));
+  },
+
+  ownsAction(action) {
+    return action.kind === "phaseOut";
+  },
+
+  applyAction(state, action: Action) {
+    if (action.kind !== "phaseOut") throw new Error("phasing.applyAction: not a phase-out");
+    return {
+      // derive the event from the UNTOUCHED pre-state, then apply (validates internally)
+      events: [derivePhaseOutEvent(state, action.phaseOut)],
+      state: applyPhaseOut(state, action.phaseOut),
+    };
+  },
+
+  onTurnEnd(state, mover) {
+    return resolvePhaseInsWithEvents(state, mover);
+  },
+
+  stateHash(state) {
+    // Two positions with the same visible board but different pending returns are NOT
+    // search-equivalent (their futures differ) — the TT must separate them (finding F2).
+    return state.phased
+      .map((p) => `${p.color}${p.type}${p.origin}:${p.returnOn}`)
+      .sort()
+      .join(",");
+  },
+
+  renderEvent(event, opts) {
+    return renderPhaseEvent(event, opts);
+  },
+};
+
+registerMechanic(phaseMechanic);

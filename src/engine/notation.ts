@@ -19,6 +19,7 @@
 // disambiguation can take board context later if ever needed.
 
 import { FILES, fileOf, toAlgebraic } from "./board.js";
+import { allMechanics } from "./mechanic.js";
 import type { Color, GameEvent, PieceType } from "./types.js";
 
 const LETTER: Record<PieceType, string> = { p: "", n: "N", b: "B", r: "R", q: "Q", k: "K" };
@@ -32,37 +33,37 @@ export interface NotationOptions {
   figurine?: boolean;
 }
 
-/** The moving piece's symbol (empty for a pawn in letter mode). */
-function pieceSym(type: PieceType, color: Color, figurine: boolean): string {
+/** The moving piece's symbol (empty for a pawn in letter mode). Exported so a
+ *  mechanic's own event renderer (e.g. phasing) shares the glyph table. */
+export function pieceSym(type: PieceType, color: Color, figurine: boolean): string {
   return figurine ? GLYPH[color][type] : LETTER[type];
 }
 
 /** A captured piece's symbol; in letter mode pawns show "P" (capture context). */
-function capturedSym(type: PieceType, color: Color, figurine: boolean): string {
+export function capturedSym(type: PieceType, color: Color, figurine: boolean): string {
   return figurine ? GLYPH[color][type] : type.toUpperCase();
 }
 
-/** Render a single derived event as a move-log string. */
+/**
+ * Render a single derived event as a move-log string. Mechanic-owned events
+ * (phase-out / phase-in) are rendered by their mechanic's `renderEvent` hook; the
+ * kernel renders the universal "move" event. (Only the event is in scope here, not
+ * the game state, so every registered mechanic is offered the event in turn.)
+ */
 export function toNotation(event: GameEvent, opts: NotationOptions = {}): string {
+  for (const m of allMechanics()) {
+    const rendered = m.renderEvent?.(event, opts);
+    if (rendered !== null && rendered !== undefined) return rendered;
+  }
+
+  // The kernel owns only the universal "move" event; mechanic-owned events are
+  // rendered above by their (always-registered) mechanic. Fail loud rather than
+  // mis-render if an owned event slipped through unhandled.
+  if (event.kind !== "move") {
+    throw new Error(`no notation renderer for event kind "${event.kind}"`);
+  }
+
   const fig = !!opts.figurine;
-
-  if (event.kind === "phaseOut") {
-    return `${pieceSym(event.piece, event.color, fig)}${toAlgebraic(event.from)}↑${event.duration}`;
-  }
-
-  if (event.kind === "phaseIn") {
-    const base = `${pieceSym(event.piece, event.color, fig)}↓${toAlgebraic(event.to)}`;
-    // The return landed on its owner's own king: the returning piece is lost.
-    if (event.selfDestruct) return `${base}(lost)`;
-    let s = base;
-    if (event.capture) s += `x${capturedSym(event.capture.type, event.capture.color, fig)}`;
-    if (event.selfCapture) s += "(self)";
-    if (event.checkmate) s += "#";
-    else if (event.check) s += "+";
-    return s;
-  }
-
-  // move
   let s: string;
   if (event.castle) {
     s = event.castle === "K" ? "O-O" : "O-O-O";
