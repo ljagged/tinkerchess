@@ -19,7 +19,8 @@
     "experiment:gr": "tsx experiments/gr.ts",
     "experiment:endgame": "tsx experiments/endgame.ts",
     "experiment:stockfish": "tsx experiments/stockfish-match.ts",
-    "experiment:boost": "tsx experiments/boost-oneshot.ts"
+    "experiment:boost": "tsx experiments/boost-oneshot.ts",
+    "experiment:bias": "tsx experiments/boost-bias.ts"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
