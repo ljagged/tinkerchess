@@ -8,10 +8,38 @@
 // to a classical TC move. Phase-ins never need a UCI representation because Stockfish
 // is re-fed the board, not the move history.
 
-import { parseSquare, pieceAt, toAlgebraic, legalMoves } from "./index.js";
+import { FILES, parseSquare, pieceAt, toAlgebraic, legalMoves, CLASSICAL_HOME_FILES } from "./index.js";
 import type { GameState, Move, PieceType } from "./index.js";
 
 const FEN_PIECE: Record<PieceType, string> = { p: "p", n: "n", b: "b", r: "r", q: "q", k: "k" };
+
+/** True if this game's back rank is non-classical (Chess960) — needs Shredder-FEN
+ *  castling and UCI_Chess960 on the Stockfish bridge, or the harness silently breaks. */
+export function isChess960(state: GameState): boolean {
+  const h = state.castlingHomeFiles ?? CLASSICAL_HOME_FILES;
+  return h.king !== CLASSICAL_HOME_FILES.king || h.aRook !== CLASSICAL_HOME_FILES.aRook || h.hRook !== CLASSICAL_HOME_FILES.hRook;
+}
+
+/**
+ * The FEN castling field. Classical uses standard KQkq; Chess960 uses Shredder-FEN —
+ * the castling ROOK's file letter (uppercase white / lowercase black), which a
+ * UCI_Chess960 engine requires to locate the rooks on a shuffled back rank.
+ */
+function castlingField(state: GameState): string {
+  const c = state.castling;
+  if (!isChess960(state)) {
+    return `${c.wK ? "K" : ""}${c.wQ ? "Q" : ""}${c.bK ? "k" : ""}${c.bQ ? "q" : ""}` || "-";
+  }
+  const h = state.castlingHomeFiles ?? CLASSICAL_HOME_FILES;
+  const hSide = FILES[h.hRook]!;
+  const aSide = FILES[h.aRook]!;
+  const s =
+    (c.wK ? hSide.toUpperCase() : "") +
+    (c.wQ ? aSide.toUpperCase() : "") +
+    (c.bK ? hSide : "") +
+    (c.bQ ? aSide : "");
+  return s || "-";
+}
 
 /**
  * Render the visible board as a standard FEN. Phased pieces are off-board, so they
@@ -40,8 +68,7 @@ export function toFEN(state: GameState): string {
     if (empty > 0) row += String(empty);
     ranks.push(row);
   }
-  const c = state.castling;
-  const castle = `${c.wK ? "K" : ""}${c.wQ ? "Q" : ""}${c.bK ? "k" : ""}${c.bQ ? "q" : ""}` || "-";
+  const castle = castlingField(state);
   const ep = state.enPassant === null ? "-" : toAlgebraic(state.enPassant);
   const fullmove = Math.floor((state.turnsTaken.w + state.turnsTaken.b) / 2) + 1;
   return `${ranks.join("/")} ${state.turn} ${castle} ${ep} 0 ${fullmove}`;

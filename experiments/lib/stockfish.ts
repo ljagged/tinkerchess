@@ -59,10 +59,13 @@ export class Stockfish {
     });
   }
 
-  async init(skill?: number): Promise<void> {
+  async init(skill?: number, opts?: { chess960?: boolean }): Promise<void> {
     this.send("uci");
     await this.until((l) => l === "uciok");
     if (skill !== undefined) this.send(`setoption name Skill Level value ${skill}`);
+    // For a Chess960 game the engine must be told, or it emits/parses castling in the
+    // classical e1g1 form and misreads a Shredder-FEN back rank (finding 5).
+    if (opts?.chess960) this.send("setoption name UCI_Chess960 value true");
     this.send("isready");
     await this.until((l) => l === "readyok");
   }

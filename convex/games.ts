@@ -379,8 +379,9 @@ export const getMoveLog = query({
 /** Convert a persisted recorded action (intent) back into an engine Action. */
 function recordedToAction(r: Doc<"matches">["log"][number]["action"]): engine.Action {
   if (r.kind === "move") {
-    const move =
-      r.promotion !== undefined ? { from: r.from, to: r.to, promotion: r.promotion } : { from: r.from, to: r.to };
+    const move: engine.Move = { from: r.from, to: r.to };
+    if (r.promotion !== undefined) move.promotion = r.promotion;
+    if (r.castle !== undefined) move.castle = r.castle; // Chess960 castle flag
     return { kind: "move", move };
   }
   return { kind: "phaseOut", phaseOut: { from: r.from, duration: r.duration } };
@@ -715,10 +716,16 @@ export const makeMove = mutation({
   },
   handler: async (ctx, args) => {
     const { game, color } = await actingSeat(ctx, args.gameId, args.seatToken);
-    const move =
-      args.promotion !== undefined
-        ? { from: args.from, to: args.to, promotion: args.promotion as engine.Move["promotion"] }
-        : { from: args.from, to: args.to };
+    const intent = {
+      from: args.from,
+      to: args.to,
+      promotion: args.promotion as engine.Move["promotion"],
+    };
+    // Resolve the client intent to the canonical legal move, which carries the castle
+    // flag in Chess960 (a king-onto-rook gesture). For classical play and ordinary
+    // moves this is the same {from,to,promotion}. Fall back to the raw intent when no
+    // legal move matches, so an illegal submission still hits commit's normal error.
+    const move = engine.resolveMove(engineState(game), intent) ?? intent;
     return commit(ctx, game, color, { kind: "move", move }, { kind: "move", ...move }, {
       requestId: args.requestId,
       expectedPly: args.expectedPly,

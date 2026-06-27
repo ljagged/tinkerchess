@@ -90,6 +90,22 @@ export interface SetupConfig {
 }
 
 /**
+ * Where castling's pieces start, as FILES (0=a .. 7=h). Classical is the special
+ * case: king e (4), rooks a (0) / h (7). A Chess960 setup supplies shuffled files;
+ * castling reads these instead of hard-coding the classical squares (decision 5).
+ */
+export interface CastlingHomeFiles {
+  king: number;
+  /** Queenside ("a-side") rook home file. */
+  aRook: number;
+  /** Kingside ("h-side") rook home file. */
+  hRook: number;
+}
+
+/** The classical castling home files: king e, rooks a/h. The default when absent. */
+export const CLASSICAL_HOME_FILES: CastlingHomeFiles = { king: 4, aRook: 0, hRook: 7 };
+
+/**
  * The moddable-engine schema version, stamped on every new game/match (decision 3).
  * Bumped when the persisted Action/GameEvent/state shape changes in a way replay must
  * branch on. Legacy rows lack it (treated as version 0 / classical+phasing).
@@ -119,6 +135,12 @@ export interface GameState {
   mechanics?: string[];
   /** The starting-position setup. Optional; absence ⇒ DEFAULT_SETUP (classical). */
   setup?: SetupConfig;
+  /**
+   * Castling home files for this game's back rank (decision 5). Optional; absence ⇒
+   * CLASSICAL_HOME_FILES. Stamped at creation from the setup so castling/rights logic
+   * reads it without rebuilding the setup each move.
+   */
+  castlingHomeFiles?: CastlingHomeFiles;
   /** Moddable-engine schema version (decision 3). Optional; absence ⇒ legacy (0). */
   schemaVersion?: number;
   /** Whose turn it is to act. */
@@ -156,11 +178,19 @@ export interface GameState {
   history?: string[];
 }
 
-/** A normal chess move. `promotion` is required only when a pawn reaches the last rank. */
+/**
+ * A normal chess move. `promotion` is required only when a pawn reaches the last
+ * rank. `castle` is the EXPLICIT castle flag (decision 5): set on a castling move
+ * whose king does not start on the e-file (Chess960), where positional detection
+ * (king moves two files) is ambiguous — there it is encoded king-onto-rook (`to` is
+ * the castling rook's square). Classical castling (king on e) omits the flag and
+ * stays positional, so classical move objects are byte-identical to before.
+ */
 export interface Move {
   from: SquareIndex;
   to: SquareIndex;
   promotion?: Exclude<PieceType, "p" | "k">;
+  castle?: "K" | "Q";
 }
 
 /** A phase-out action: take a non-pawn piece off the board for `duration` of the owner's turns. */

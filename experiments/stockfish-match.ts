@@ -13,7 +13,8 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import { legalMoves } from "../src/engine/index.js";
 import type { GameState, RuleConfig } from "../src/engine/index.js";
-import { toFEN, uciToMove, isTcLegal } from "../src/engine/classical.js";
+import { toFEN, uciToMove } from "../src/engine/classical.js";
+import { resolveMove } from "../src/engine/index.js";
 import { search } from "../src/bot/search.js";
 import { DEFAULT_WEIGHTS } from "../src/bot/evaluate.js";
 import { Stockfish, type GoLimits } from "./lib/stockfish.js";
@@ -44,8 +45,10 @@ function sfChooser(sf: Stockfish): Chooser {
     // TC-illegal (the ring rule can forbid a move classical chess allows).
     for (const uci of [best, ...ranked]) {
       if (uci && uci !== "(none)") {
-        const mv = uciToMove(uci);
-        if (isTcLegal(state, mv)) return { kind: "move", move: mv };
+        // resolveMove both checks TC-legality (incl. the ring rule) and canonicalizes
+        // — so a UCI_Chess960 king-onto-rook castle becomes the flagged engine move.
+        const mv = resolveMove(state, uciToMove(uci));
+        if (mv) return { kind: "move", move: mv };
       }
     }
     return { kind: "move", move: legalMoves(state)[0]! };

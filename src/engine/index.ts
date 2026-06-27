@@ -15,7 +15,15 @@ export {
   positionKey,
 } from "./board.js";
 export { isAttacked, inCheck, findKing } from "./attacks.js";
-export { generateMoves, isLegalMove, legalMovesFrom, applyMove } from "./moves.js";
+export {
+  generateMoves,
+  isLegalMove,
+  legalMovesFrom,
+  applyMove,
+  deriveMoveEvent,
+  movesEqual,
+  resolveMove,
+} from "./moves.js";
 export {
   isPhaseable,
   maxDuration,
@@ -55,8 +63,11 @@ export {
   registerSetup,
   getSetup,
   classicalSetup,
+  chess960Setup,
+  scharnaglBackRank,
   buildFromBackRank,
   homeFilesFromBackRank,
+  CHESS960_POSITIONS,
 } from "./setup.js";
 export type { Setup, BuiltSetup, CastlingHomeFiles } from "./setup.js";
 export type { GameOptions } from "./board.js";
