@@ -10,16 +10,9 @@
 // exists and classical is registered; castling still reads its classical home squares
 // directly (wired to these files in Stage 2).
 
-import type { Piece, SetupConfig, SquareIndex } from "./types.js";
+import type { CastlingHomeFiles, Piece, SetupConfig } from "./types.js";
 
-/** Where castling's pieces start, as FILES (0=a .. 7=h). Classical: king e, rooks a/h. */
-export interface CastlingHomeFiles {
-  king: number;
-  /** Queenside ("a-side") rook's home file. */
-  aRook: number;
-  /** Kingside ("h-side") rook's home file. */
-  hRook: number;
-}
+export type { CastlingHomeFiles };
 
 export interface BuiltSetup {
   /** A fresh 64-square board with both armies placed. */

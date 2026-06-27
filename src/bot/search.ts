@@ -106,7 +106,10 @@ function orderScore(state: GameState, action: Action): number {
   const m = action.move;
   const victim = pieceAt(state.board, m.to);
   const mover = pieceAt(state.board, m.from)!;
-  if (victim) return 100_000 + 10 * PV[victim.type] - PV[mover.type];
+  // A Chess960 castle is encoded king-onto-rook, so `m.to` holds the mover's OWN rook
+  // — not a capture. Real captures are always an enemy piece (classical play never
+  // lands on an own piece), so this guard is a no-op for classical.
+  if (victim && victim.color !== mover.color) return 100_000 + 10 * PV[victim.type] - PV[mover.type];
   if (mover.type === "p" && m.to === state.enPassant) return 100_000; // en-passant capture
   return 0; // quiet
 }
@@ -122,8 +125,10 @@ function orderedActions(state: GameState): Action[] {
 function isCapture(state: GameState, action: Action): boolean {
   if (action.kind !== "move") return false;
   const m = action.move;
-  if (pieceAt(state.board, m.to)) return true;
   const mover = pieceAt(state.board, m.from);
+  const victim = pieceAt(state.board, m.to);
+  // Enemy occupant only — a Chess960 castle's king-onto-rook target is the own rook.
+  if (victim && mover && victim.color !== mover.color) return true;
   return mover?.type === "p" && m.to === state.enPassant;
 }
 

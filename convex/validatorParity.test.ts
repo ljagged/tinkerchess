@@ -102,14 +102,16 @@ describe("validator parity — recordedActionV mirrors the engine Action union",
   });
 
   it("each variant declares exactly the engine's stored fields", () => {
-    // Recorded form (games.ts): move flattens Move; phaseOut flattens PhaseOut.
-    expect(fieldsOf(recordedJson, "move")).toEqual(new Set(["kind", "from", "to", "promotion"]));
+    // Recorded form (games.ts): move flattens Move (incl. the Chess960 castle flag);
+    // phaseOut flattens PhaseOut.
+    expect(fieldsOf(recordedJson, "move")).toEqual(new Set(["kind", "from", "to", "promotion", "castle"]));
     expect(fieldsOf(recordedJson, "phaseOut")).toEqual(new Set(["kind", "from", "duration"]));
   });
 
   it("accepts a representative value of every variant", () => {
     expect(accepts(recordedJson, { kind: "move", from: 12, to: 28 })).toBe(true);
     expect(accepts(recordedJson, { kind: "move", from: 52, to: 60, promotion: "q" })).toBe(true);
+    expect(accepts(recordedJson, { kind: "move", from: 4, to: 7, castle: "K" })).toBe(true); // 960 king-onto-rook
     expect(accepts(recordedJson, { kind: "phaseOut", from: 1, duration: 2 })).toBe(true);
   });
 
@@ -162,6 +164,7 @@ describe("validator parity — gameStateV carries the moddable axes (decision 3 
     const fields = objectFieldSpec(stateJson);
     expect(fields.mechanics).toEqual({ optional: true });
     expect(fields.setup).toEqual({ optional: true });
+    expect(fields.castlingHomeFiles).toEqual({ optional: true });
     expect(fields.schemaVersion).toEqual({ optional: true });
     // config stays phasing's RuleConfig (named-fields approach), still optional.
     expect(fields.config).toEqual({ optional: true });

@@ -22,7 +22,9 @@ import {
 import { isAttacked } from "./attacks.js";
 import { kingSafe, warningSquaresFor } from "./phase.js";
 import { augmentsActive, augmentedMoves } from "./mechanic.js";
+import { CLASSICAL_HOME_FILES } from "./types.js";
 import type {
+  CastlingHomeFiles,
   Color,
   GameEvent,
   GameState,
@@ -31,6 +33,37 @@ import type {
   PieceType,
   SquareIndex,
 } from "./types.js";
+
+/** This game's castling home files (absent ⇒ classical: king e, rooks a/h). */
+function homeFiles(state: GameState): CastlingHomeFiles {
+  return state.castlingHomeFiles ?? CLASSICAL_HOME_FILES;
+}
+
+/** Structural move equality (decision 5): from, to, promotion, AND the castle flag —
+ *  so a normal king step and a same-square castle are never conflated (Chess960). */
+export function movesEqual(a: Move, b: Move): boolean {
+  return (
+    a.from === b.from &&
+    a.to === b.to &&
+    (a.promotion ?? null) === (b.promotion ?? null) &&
+    (a.castle ?? null) === (b.castle ?? null)
+  );
+}
+
+/**
+ * Which side `move` castles to, or null. The single castle-detection point: an
+ * explicit flag (Chess960, king off the e-file) takes precedence; otherwise the
+ * classical positional rule (king on the e-file moving exactly two files) applies —
+ * keeping classical castle moves flag-free and byte-identical to before.
+ */
+function castleSideOf(state: GameState, move: Move, piece: Piece): "K" | "Q" | null {
+  if (piece.type !== "k") return null;
+  if (move.castle) return move.castle;
+  const home = homeFiles(state);
+  if (home.king !== 4 || fileOf(move.from) !== 4) return null;
+  const df = fileOf(move.to) - 4;
+  return df === 2 ? "K" : df === -2 ? "Q" : null;
+}
 
 const KNIGHT_OFFSETS: ReadonlyArray<[number, number]> = [
   [1, 2], [2, 1], [2, -1], [1, -2],
@@ -177,37 +210,54 @@ function pawnMoves(state: GameState, from: SquareIndex, color: Color): Move[] {
 
 function castlingMoves(state: GameState, from: SquareIndex, color: Color): Move[] {
   const moves: Move[] = [];
-  const homeKing = color === "w" ? squareIndex(4, 0) : squareIndex(4, 7);
-  if (from !== homeKing) return moves;
-  const enemy: Color = color === "w" ? "b" : "w";
+  const home = homeFiles(state);
   const rank = color === "w" ? 0 : 7;
-  // An enemy imminent-return ring counts like an attacked square: the king may
-  // not castle into or through a ringed square (it would be a S5a check there).
-  const rings = warningSquaresFor(state, color);
-  const empty = (file: number) => !pieceAt(state.board, squareIndex(file, rank));
-  const safe = (file: number) => {
-    const sq = squareIndex(file, rank);
-    return !isAttacked(state, sq, enemy) && !rings.includes(sq);
-  };
-  const rights = state.castling;
-
+  if (from !== squareIndex(home.king, rank)) return moves;
   // King may not castle out of check (standard attack or an enemy ring on it).
   if (!kingSafe(state, color)) return moves;
 
-  // Kingside: squares f,g empty; king path e,f,g safe.
-  const kingsideRight = color === "w" ? rights.wK : rights.bK;
-  if (kingsideRight && empty(5) && empty(6) && safe(4) && safe(5) && safe(6)) {
-    moves.push({ from, to: squareIndex(6, rank) });
-  }
-  // Queenside: squares b,c,d empty; king path e,d,c safe.
-  const queensideRight = color === "w" ? rights.wQ : rights.bQ;
-  if (
-    queensideRight &&
-    empty(1) && empty(2) && empty(3) &&
-    safe(4) && safe(3) && safe(2)
-  ) {
-    moves.push({ from, to: squareIndex(2, rank) });
-  }
+  const enemy: Color = color === "w" ? "b" : "w";
+  // An enemy imminent-return ring counts like an attacked square: the king may not
+  // castle into or through a ringed square (it would be a S5a check there).
+  const rings = warningSquaresFor(state, color);
+  const rights = state.castling;
+  // Chess960 (king off the e-file) needs the explicit flag, encoded king-onto-rook,
+  // since positional detection is ambiguous. Classical (king on e) stays flag-free.
+  const useFlag = home.king !== 4;
+
+  // FIDE rule (classical and 960): the king lands on g (kingside) / c (queenside) and
+  // the rook on f / d. Squares that must be EMPTY are the union of the king's and the
+  // rook's travel paths, minus the king's and rook's own starting squares. Squares
+  // that must be SAFE are the king's path (inclusive). The destination encoded in the
+  // move is g/c classically, or the rook's square (king-onto-rook) in Chess960.
+  const tryCastle = (side: "K" | "Q", rookFile: number, kingTo: number, rookTo: number) => {
+    const right = side === "K" ? (color === "w" ? rights.wK : rights.bK)
+                                : (color === "w" ? rights.wQ : rights.bQ);
+    if (!right) return;
+    const rook = pieceAt(state.board, squareIndex(rookFile, rank));
+    if (!rook || rook.type !== "r" || rook.color !== color) return;
+
+    const spanEmpty = (a: number, b: number) => {
+      for (let f = Math.min(a, b); f <= Math.max(a, b); f++) {
+        if (f === home.king || f === rookFile) continue; // king & castling rook may occupy their own paths
+        if (pieceAt(state.board, squareIndex(f, rank))) return false;
+      }
+      return true;
+    };
+    if (!spanEmpty(home.king, kingTo)) return; // king's travel must be clear
+    if (!spanEmpty(rookFile, rookTo)) return; // rook's travel must be clear
+
+    for (let f = Math.min(home.king, kingTo); f <= Math.max(home.king, kingTo); f++) {
+      const sq = squareIndex(f, rank);
+      if (isAttacked(state, sq, enemy) || rings.includes(sq)) return; // king path must be safe
+    }
+
+    const to = useFlag ? squareIndex(rookFile, rank) : squareIndex(kingTo, rank);
+    moves.push(useFlag ? { from, to, castle: side } : { from, to });
+  };
+
+  tryCastle("K", home.hRook, 6, 5);
+  tryCastle("Q", home.aRook, 2, 3);
   return moves;
 }
 
@@ -230,11 +280,27 @@ export function legalMovesFrom(state: GameState, from: SquareIndex): Move[] {
   });
 }
 
-/** True if `move` is fully legal (king-safe and not a king capture). */
+/** True if `move` is fully legal (king-safe and not a king capture). Compares the
+ *  full move incl. the castle flag, so a Chess960 king-onto-rook castle is not
+ *  conflated with any same-square non-castle move. */
 export function isLegalMove(state: GameState, move: Move): boolean {
-  return legalMovesFrom(state, move.from).some(
-    (m) => m.to === move.to && m.promotion === move.promotion,
+  return legalMovesFrom(state, move.from).some((m) => movesEqual(m, move));
+}
+
+/**
+ * Resolve a client-/UCI-supplied intent ({from,to,promotion}, no castle flag) to the
+ * canonical legal move — which carries the castle flag in Chess960. Returns null if
+ * no legal move matches. Used by the server and bridges so the applied/recorded move
+ * is always canonical (the engine's apply reads the flag, not geometry).
+ */
+export function resolveMove(
+  state: GameState,
+  intent: { from: SquareIndex; to: SquareIndex; promotion?: Move["promotion"] },
+): Move | null {
+  const matches = legalMovesFrom(state, intent.from).filter(
+    (m) => m.to === intent.to && (m.promotion ?? null) === (intent.promotion ?? null),
   );
+  return matches[0] ?? null;
 }
 
 /**
@@ -247,11 +313,22 @@ export function applyMove(state: GameState, move: Move): GameState {
   const piece = pieceAt(next.board, move.from);
   if (!piece) throw new Error(`no piece on square ${move.from}`);
 
+  // Castling is its own branch: the king and rook land on g/f (kingside) or c/d
+  // (queenside) regardless of where they started, and in Chess960 `move.to` is the
+  // rook's square (king-onto-rook) — NOT a capture — so this must precede the normal
+  // capture/relocate path. No capture, no en-passant target on a castle.
+  const castleSide = castleSideOf(state, move, piece);
+  if (castleSide) {
+    applyCastle(next, move, piece, castleSide);
+    updateCastlingRights(next, move, piece, null);
+    next.enPassant = null;
+    return next;
+  }
+
   const captured = pieceAt(next.board, move.to);
   const fromFile = fileOf(move.from);
   const toFile = fileOf(move.to);
   const isPawn = piece.type === "p";
-  const isKing = piece.type === "k";
 
   // En-passant capture: pawn moves diagonally onto the en-passant target,
   // which is empty; the captured pawn sits behind it.
@@ -268,18 +345,6 @@ export function applyMove(state: GameState, move: Move): GameState {
     next.board[move.to] = { color: piece.color, type: move.promotion ?? "q" };
   } else {
     next.board[move.to] = piece;
-  }
-
-  // Castling: move the rook to the other side of the king.
-  if (isKing && Math.abs(toFile - fromFile) === 2) {
-    const rank = rankOf(move.from);
-    if (toFile === 6) {
-      next.board[squareIndex(5, rank)] = pieceAt(next.board, squareIndex(7, rank));
-      next.board[squareIndex(7, rank)] = null;
-    } else if (toFile === 2) {
-      next.board[squareIndex(3, rank)] = pieceAt(next.board, squareIndex(0, rank));
-      next.board[squareIndex(0, rank)] = null;
-    }
   }
 
   updateCastlingRights(next, move, piece, captured);
@@ -299,6 +364,23 @@ export function applyMove(state: GameState, move: Move): GameState {
 }
 
 /**
+ * Place the king and castling rook on their destinations (FIDE rule: king g/c, rook
+ * f/d), reading the castling rook's start from this game's home files. Both origins
+ * are cleared before placement so a Chess960 overlap (e.g. the king ending on the
+ * rook's old square) can't drop a piece.
+ */
+function applyCastle(next: GameState, move: Move, king: Piece, side: "K" | "Q"): void {
+  const rank = rankOf(move.from);
+  const home = homeFiles(next);
+  const rookFromSq = squareIndex(side === "K" ? home.hRook : home.aRook, rank);
+  const rook = pieceAt(next.board, rookFromSq);
+  next.board[move.from] = null;
+  next.board[rookFromSq] = null;
+  next.board[squareIndex(side === "K" ? 6 : 2, rank)] = king;
+  next.board[squareIndex(side === "K" ? 5 : 3, rank)] = rook;
+}
+
+/**
  * Derive the move event (capture, en-passant, castle, promotion) from the
  * pre-state and the move. Pure; does not mutate. The `check` / `checkmate` flags
  * are NOT set here — they depend on the FINAL post-return board the opponent will
@@ -307,10 +389,17 @@ export function applyMove(state: GameState, move: Move): GameState {
 export function deriveMoveEvent(pre: GameState, move: Move): GameEvent {
   const piece = pieceAt(pre.board, move.from);
   if (!piece) throw new Error(`no piece on square ${move.from}`);
+
+  // Castling first: in Chess960 `move.to` is the rook's square, which would otherwise
+  // read as a (self-)capture. Detection is the single castleSideOf point.
+  const castle = castleSideOf(pre, move, piece);
+  if (castle) {
+    return { kind: "move", color: piece.color, piece: piece.type, from: move.from, to: move.to, castle };
+  }
+
   const fromFile = fileOf(move.from);
   const toFile = fileOf(move.to);
   const isPawn = piece.type === "p";
-  const isKing = piece.type === "k";
 
   let capture: { color: Color; type: PieceType } | undefined;
   let enPassant = false;
@@ -325,8 +414,6 @@ export function deriveMoveEvent(pre: GameState, move: Move): GameEvent {
     }
   }
 
-  const castle: "K" | "Q" | undefined =
-    isKing && Math.abs(toFile - fromFile) === 2 ? (toFile === 6 ? "K" : "Q") : undefined;
   const promotion: Exclude<PieceType, "p" | "k"> | undefined =
     isPawn && (rankOf(move.to) === 0 || rankOf(move.to) === 7) ? move.promotion ?? "q" : undefined;
 
@@ -338,7 +425,6 @@ export function deriveMoveEvent(pre: GameState, move: Move): GameEvent {
     to: move.to,
     ...(capture ? { capture } : {}),
     ...(enPassant ? { enPassant: true as const } : {}),
-    ...(castle ? { castle } : {}),
     ...(promotion ? { promotion } : {}),
   };
 }
@@ -354,14 +440,17 @@ function updateCastlingRights(
     if (piece.color === "w") { c.wK = false; c.wQ = false; }
     else { c.bK = false; c.bQ = false; }
   }
-  // A rook leaving its home corner forfeits that side.
-  const corner = (sq: SquareIndex) => {
-    if (sq === squareIndex(0, 0)) c.wQ = false;
-    else if (sq === squareIndex(7, 0)) c.wK = false;
-    else if (sq === squareIndex(0, 7)) c.bQ = false;
-    else if (sq === squareIndex(7, 7)) c.bK = false;
+  // A rook leaving its home file (or being captured there) forfeits that side. Home
+  // files come from the setup (classical a/h ⇒ the same corners as before).
+  const home = homeFiles(state);
+  const forfeit = (sq: SquareIndex) => {
+    const f = fileOf(sq);
+    const r = rankOf(sq);
+    if (r === 0 && f === home.aRook) c.wQ = false;
+    else if (r === 0 && f === home.hRook) c.wK = false;
+    else if (r === 7 && f === home.aRook) c.bQ = false;
+    else if (r === 7 && f === home.hRook) c.bK = false;
   };
-  if (piece.type === "r") corner(move.from);
-  // A rook captured on its home corner also forfeits that side.
-  if (captured && captured.type === "r") corner(move.to);
+  if (piece.type === "r") forfeit(move.from);
+  if (captured && captured.type === "r") forfeit(move.to);
 }

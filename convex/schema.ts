@@ -76,6 +76,14 @@ export const setupConfigV = v.object({
   position: v.optional(v.number()),
 });
 
+// Castling home files (mirrors engine CastlingHomeFiles): king + the two rooks'
+// starting files. Optional on the row; absent ⇒ classical (king e, rooks a/h).
+export const castlingHomeFilesV = v.object({
+  king: v.number(),
+  aRook: v.number(),
+  hRook: v.number(),
+});
+
 export const gameStateV = v.object({
   board: v.array(v.union(pieceV, v.null())),
   // Optional for back-compat; engine.createGame() always sets it on new games.
@@ -110,6 +118,7 @@ export const gameStateV = v.object({
   // absent ⇒ legacy. All optional so games stored before this refactor read correctly.
   mechanics: v.optional(v.array(v.string())),
   setup: v.optional(setupConfigV),
+  castlingHomeFiles: v.optional(castlingHomeFilesV),
   schemaVersion: v.optional(v.number()),
 });
 
@@ -160,6 +169,10 @@ export const recordedActionV = v.union(
     from: v.number(),
     to: v.number(),
     promotion: v.optional(promotionTypeV),
+    // Explicit castle flag (decision 5). Present only on a Chess960 castle (king off
+    // the e-file, encoded king-onto-rook); absent for classical castling and all
+    // other moves. Append-only-optional, so older recorded moves replay unchanged.
+    castle: v.optional(v.union(v.literal("K"), v.literal("Q"))),
   }),
   v.object({
     kind: v.literal("phaseOut"),
