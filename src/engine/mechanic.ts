@@ -23,6 +23,7 @@ import type {
   GameState,
   Move,
   Piece,
+  PieceType,
   SquareIndex,
 } from "./types.js";
 import type { NotationOptions } from "./notation.js";
@@ -57,6 +58,15 @@ export interface Mechanic {
    * for the mechanic's OWN actions (those handle their own bookkeeping).
    */
   afterMove?(state: GameState, move: Move): void;
+
+  /**
+   * INTERCEPT promotion (decision: mechanics intercept core rules, not just add
+   * actions). Called in applyMove the moment a pawn promotes, with the chosen piece
+   * type already placed on `square`; the mechanic may augment the outcome (e.g.
+   * promotion-grants-boost upgrades the new piece to its fairy form). Mutates state in
+   * place. Gated on a promotion actually happening, so non-promotion play pays nothing.
+   */
+  onPromotion?(state: GameState, square: SquareIndex, promoted: PieceType): void;
 
   /**
    * End-of-turn tick for `mover` (phase-ins, buff expiry), after the turn counter

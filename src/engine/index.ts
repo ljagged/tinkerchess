@@ -68,6 +68,7 @@ export {
   fairyExtraTargets,
 } from "./boost.js";
 export type { BoostCheck } from "./boost.js";
+export { promoBoostMechanic } from "./promoBoost.js";
 export {
   registerSetup,
   getSetup,

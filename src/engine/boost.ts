@@ -197,11 +197,14 @@ function applyBoostMechanics(
   return { ok: true, state: next };
 }
 
-/** Carry boosts across a move: drop a boost on the captured square, then move the
- *  mover's boost from→to. Shared by the immediate-move path and the afterMove hook. */
+/** Carry boosts across a move: drop a CAPTURED enemy boost on the destination, then
+ *  move the mover's boost from→to. Shared by the immediate-move path and the afterMove
+ *  hook. Only an enemy boost on `to` is dropped — the mover's own boost there (e.g. one
+ *  just granted by a promotion mechanic) is preserved. */
 function relocateBoosts(state: GameState, move: Move): void {
   if (!state.boosts || state.boosts.length === 0) return;
-  state.boosts = state.boosts.filter((b) => b.square !== move.to);
+  const moverColor = state.board[move.to]?.color;
+  state.boosts = state.boosts.filter((b) => !(b.square === move.to && b.color !== moverColor));
   for (const b of state.boosts) if (b.square === move.from) b.square = move.to;
 }
 

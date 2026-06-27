@@ -21,7 +21,7 @@ import {
 } from "./board.js";
 import { isAttacked } from "./attacks.js";
 import { kingSafe, warningSquaresFor } from "./phase.js";
-import { augmentsActive, augmentedMoves } from "./mechanic.js";
+import { activeMechanics, augmentsActive, augmentedMoves } from "./mechanic.js";
 import { CLASSICAL_HOME_FILES } from "./types.js";
 import type {
   CastlingHomeFiles,
@@ -346,7 +346,11 @@ export function applyMove(state: GameState, move: Move): GameState {
   // Relocate the piece, applying promotion if a pawn reached the last rank.
   next.board[move.from] = null;
   if (isPawn && (rankOf(move.to) === 0 || rankOf(move.to) === 7)) {
-    next.board[move.to] = { color: piece.color, type: move.promotion ?? "q" };
+    const promoted = move.promotion ?? "q";
+    next.board[move.to] = { color: piece.color, type: promoted };
+    // Promotion-intercept seam: a mechanic may augment the just-promoted piece
+    // (e.g. promotion-grants-boost). Gated on a promotion actually happening.
+    for (const mechanic of activeMechanics(next)) mechanic.onPromotion?.(next, move.to, promoted);
   } else {
     next.board[move.to] = piece;
   }
