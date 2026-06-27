@@ -115,6 +115,22 @@ export const SCHEMA_VERSION = 1;
 /** The default active mechanics — phasing only, preserving today's behavior. */
 export const DEFAULT_MECHANICS: string[] = ["phasing"];
 
+/** A piece type that can receive a boost (everything but a pawn). */
+export type FairyBase = Exclude<PieceType, "p">;
+
+/**
+ * A standing boost on a single piece (the boost mechanic's named state, decision 4).
+ * Tracked by the boosted piece's CURRENT square (relocated when it moves) and the
+ * underlying piece type, which selects the fairy upgrade (bishop→Dragon Horse, etc.).
+ * The buff ends once the owner's `turnsTaken` reaches `expiresOn`.
+ */
+export interface BoostState {
+  color: Color;
+  square: SquareIndex;
+  base: FairyBase;
+  expiresOn: number;
+}
+
 /** The default setup — classical chess. */
 export const DEFAULT_SETUP: SetupConfig = { id: "classical" };
 
@@ -156,6 +172,12 @@ export interface GameState {
   lastEvent: SelfCaptureEvent | null;
   /** Pieces currently phased out, for both colors. */
   phased: PhasedPiece[];
+  /**
+   * Standing boosts (the boost mechanic's named state). Optional; absent ⇒ no boosts.
+   * Its presence is the cheap gate for the decision-1 attack/move fold: classical and
+   * phasing-only games never have it, so the kernel's augmentation path stays dormant.
+   */
+  boosts?: BoostState[];
   castling: CastlingRights;
   /** En-passant target square (the square a pawn skipped over), or null. */
   enPassant: SquareIndex | null;
@@ -199,9 +221,24 @@ export interface PhaseOut {
   duration: number;
 }
 
+/**
+ * A boost action: upgrade your own non-pawn piece on `target` to its fairy form by
+ * sacrificing `fodder` (your own pieces, classically valued, summing EXACTLY to the
+ * cost — no change, no banking). With `move` present the boost is IMMEDIATE — the
+ * piece also moves this turn (cost + a premium); without it, the boost consumes the
+ * turn. The fodder squares are removed; the boosted piece stands for a 3-turn buff.
+ */
+export interface BoostInput {
+  target: SquareIndex;
+  fodder: SquareIndex[];
+  /** When present, the boosted piece moves this turn (immediate boost). */
+  move?: Move;
+}
+
 export type Action =
   | { kind: "move"; move: Move }
-  | { kind: "phaseOut"; phaseOut: PhaseOut };
+  | { kind: "phaseOut"; phaseOut: PhaseOut }
+  | { kind: "boost"; boost: BoostInput };
 
 /**
  * A DERIVED event: what actually happened when an action was applied, with all
@@ -240,6 +277,25 @@ export type GameEvent =
       from: SquareIndex;
       duration: number;
       returnOn: number;
+    }
+  | {
+      kind: "boostGranted";
+      color: Color;
+      /** The upgraded piece type (selects the fairy form) and its square. */
+      base: FairyBase;
+      square: SquareIndex;
+      /** The sacrificed fodder piece types (for the move log). */
+      fodder: PieceType[];
+      /** True when the boost was immediate (the piece also moved this turn). */
+      immediate?: true;
+      /** Owner's turnsTaken value at which the buff expires. */
+      expiresOn: number;
+    }
+  | {
+      kind: "boostExpired";
+      color: Color;
+      base: FairyBase;
+      square: SquareIndex;
     }
   | {
       kind: "phaseIn";

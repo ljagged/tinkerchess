@@ -19,6 +19,9 @@ import {
   type SeatPhaseEvent,
 } from "./view.js";
 import { search, type SearchOptions } from "./search.js";
+// Registers boost's eval term keyed by its mechanic id (side-effect import); only
+// folded in for boost-active games via resolveEvalTerms.
+import "./boostEval.js";
 
 export {
   gameStateFromView,

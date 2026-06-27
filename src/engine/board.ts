@@ -130,6 +130,7 @@ export function cloneState(state: GameState): GameState {
     endReason: state.endReason,
     lastEvent: state.lastEvent ? { ...state.lastEvent } : null,
     phased: state.phased.map((p) => ({ ...p })),
+    boosts: state.boosts ? state.boosts.map((b) => ({ ...b })) : undefined,
     castling: { ...state.castling },
     enPassant: state.enPassant,
     turnsTaken: { ...state.turnsTaken },

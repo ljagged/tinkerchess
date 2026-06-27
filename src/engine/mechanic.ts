@@ -51,6 +51,14 @@ export interface Mechanic {
   applyAction?(state: GameState, action: Action): { state: GameState; events: GameEvent[] };
 
   /**
+   * React to a "move" action's board mutation, mutating `state` in place (it is a
+   * fresh post-move clone). Lets a mechanic carry per-piece state with the piece —
+   * boost relocates a moved piece's buff from→to and drops a captured one. NOT called
+   * for the mechanic's OWN actions (those handle their own bookkeeping).
+   */
+  afterMove?(state: GameState, move: Move): void;
+
+  /**
    * End-of-turn tick for `mover` (phase-ins, buff expiry), after the turn counter
    * increments and before the turn flips. Returns the new state and any events.
    */
@@ -127,7 +135,11 @@ export function activeMechanics(state: GameState): Mechanic[] {
  */
 export function augmentsActive(state: GameState): boolean {
   if (AUGMENTING_IDS.size === 0) return false;
-  for (const id of activeMechanicIds(state)) {
+  // Read state.mechanics directly (no `?? default` allocation on the hot path): a
+  // legacy/default state has no mechanics field and is never augmenting (phasing only).
+  const ids = state.mechanics;
+  if (!ids) return false;
+  for (const id of ids) {
     if (AUGMENTING_IDS.has(id)) return true;
   }
   return false;

@@ -59,8 +59,12 @@ export function movesEqual(a: Move, b: Move): boolean {
 function castleSideOf(state: GameState, move: Move, piece: Piece): "K" | "Q" | null {
   if (piece.type !== "k") return null;
   if (move.castle) return move.castle;
+  // Classical positional rule: the king on its home SQUARE (e-file, home rank) moving
+  // exactly two files. The home-rank guard matters once a 2-step king (boost) can move
+  // two files elsewhere on the board — those are plain moves, never castles.
   const home = homeFiles(state);
-  if (home.king !== 4 || fileOf(move.from) !== 4) return null;
+  const homeRank = piece.color === "w" ? 0 : 7;
+  if (home.king !== 4 || fileOf(move.from) !== 4 || rankOf(move.from) !== homeRank) return null;
   const df = fileOf(move.to) - 4;
   return df === 2 ? "K" : df === -2 ? "Q" : null;
 }

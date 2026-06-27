@@ -365,8 +365,10 @@ export const getMoveLog = query({
           entry.to = ev.to;
         } else if (ev.kind === "phaseOut") {
           entry.from = ev.from;
-        } else {
+        } else if (ev.kind === "phaseIn") {
           entry.to = ev.to;
+        } else {
+          entry.to = ev.square; // boostGranted / boostExpired highlight the boosted square
         }
         return entry;
       }),
@@ -383,6 +385,12 @@ function recordedToAction(r: Doc<"matches">["log"][number]["action"]): engine.Ac
     if (r.promotion !== undefined) move.promotion = r.promotion;
     if (r.castle !== undefined) move.castle = r.castle; // Chess960 castle flag
     return { kind: "move", move };
+  }
+  if (r.kind === "boost") {
+    const move = r.move
+      ? ({ from: r.move.from, to: r.move.to, ...(r.move.promotion ? { promotion: r.move.promotion } : {}), ...(r.move.castle ? { castle: r.move.castle } : {}) } as engine.Move)
+      : undefined;
+    return { kind: "boost", boost: { target: r.target, fodder: r.fodder, ...(move ? { move } : {}) } };
   }
   return { kind: "phaseOut", phaseOut: { from: r.from, duration: r.duration } };
 }

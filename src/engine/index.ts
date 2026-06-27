@@ -60,6 +60,15 @@ export {
 export type { Mechanic } from "./mechanic.js";
 export { phaseMechanic } from "./phase.js";
 export {
+  boostMechanic,
+  boostAt,
+  isBoosted,
+  validateBoost,
+  legalBoosts,
+  fairyExtraTargets,
+} from "./boost.js";
+export type { BoostCheck } from "./boost.js";
+export {
   registerSetup,
   getSetup,
   classicalSetup,
