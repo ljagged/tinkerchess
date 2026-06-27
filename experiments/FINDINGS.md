@@ -39,8 +39,27 @@ perfect-play-from-opening); random-sample positions; weak detection (mate-in-0 o
   eval already prices it highest (+250cp). Whether 3 turns converts is unproven.
 - **"Turn-3 Amazon" gives White a near-forced win (amplifies the first-move edge).**
   The headline claim. Hand-waved (no forced line; the d1 queen starts buried) and in
-  tension with F3. To be measured by the self-play bias experiment (`boost-bias.ts`) and
-  optionally a targeted FM1 probe.
+  tension with F3. First measurement below (F4) does not support it.
+
+### F4 — First bias baseline: no significant White amplification (and underpowered)
+`boost-bias.ts`, 60 shared openings, depth 2, seed 1:
+
+| ruleset | W | B | draws | White score% |
+|---|---|---|---|---|
+| baseline `["phasing"]` | 6 | 15 | 39 | 42.5% |
+| boost `["phasing","boost"]` | 9 | 10 | 41 | 49.2% |
+
+Delta = **+6.7 pts**. Read honestly: **inconclusive, leaning against FM1.**
+- The delta is **within noise** — only ~20 decisive games per side (≈⅔ draws), so the
+  error bar on each win-rate is ~±10 pts; +6.7 is ~1σ.
+- The baseline shows White at **42.5% (Black-favored)** — the depth-2 engine can't even
+  reproduce the classical first-move edge, so it is **underpowered to test FM1**. Can't
+  confirm or refute amplification with a bot too weak to show the baseline bias.
+- Boost did **not** produce a White-win surge; draw rate was equal-to-higher (41 vs 39),
+  the opposite of an "Amazon blitzkrieg," and consistent with F3 (attrition → draws).
+
+To firm up: stronger play (depth ≥3, much slower) and/or many more games + multiple
+seeds. This is the baseline harness + first read, per plan — not a verdict.
 - **Immediate boosts cause cognitive overload for humans.** A real UX concern (non-local
   move possibilities), independent of engine balance. Tunable: raise the immediate
   premium (currently +2) or restrict same-turn checks/captures.
