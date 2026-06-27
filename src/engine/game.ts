@@ -74,6 +74,8 @@ export function applyActionWithEvents(
     }
     next = applyMove(state, action.move);
     events.push(deriveMoveEvent(state, action.move));
+    // Let mechanics carry per-piece state across the move (boost follows the piece).
+    for (const mechanic of activeMechanics(next)) mechanic.afterMove?.(next, action.move);
   } else {
     // A non-move action is owned by a mechanic (phasing's phase-out today). The
     // mechanic validates internally and derives its own initiating event(s).

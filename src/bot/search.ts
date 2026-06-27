@@ -102,7 +102,9 @@ const PV = DEFAULT_WEIGHTS.pieceValue;
 
 /** Move-ordering score (higher first). Phase-outs sort last; captures by MVV-LVA. */
 function orderScore(state: GameState, action: Action): number {
-  if (action.kind === "phaseOut") return -1_000_000; // most phase-outs are bad; prune late
+  // Non-move actions (phase-out, boost) sacrifice tempo/material up front; order them
+  // last so the search prunes them late.
+  if (action.kind !== "move") return -1_000_000;
   const m = action.move;
   const victim = pieceAt(state.board, m.to);
   const mover = pieceAt(state.board, m.from)!;

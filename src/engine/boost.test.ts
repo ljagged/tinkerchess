@@ -13,7 +13,9 @@ import {
   augmentsActive,
   parseSquare,
   createGame,
+  toNotation,
 } from "./index.js";
+import type { GameEvent } from "./index.js";
 import type { BoostState, Color, GameState, Piece, SquareIndex } from "./index.js";
 
 function boostState(boosts: BoostState[], turn: Color = "w"): GameState {
@@ -104,6 +106,23 @@ describe("CRITICAL — a boosted move is filtered by kingSafe (no illegal self-c
     expect(tos).not.toContain(sq("c3")); // ferz diagonal — illegal (breaks the pin)
     expect(tos).not.toContain(sq("e3"));
     expect(tos).toContain(sq("d3")); // sliding up the pin line stays legal
+  });
+});
+
+describe("boost — notation (the mechanic renders its own events)", () => {
+  it("renders boostGranted (with fairy tag + fodder) and boostExpired", () => {
+    const granted: GameEvent = {
+      kind: "boostGranted",
+      color: "w",
+      base: "q",
+      square: parseSquare("d1"),
+      fodder: ["r"],
+      immediate: true,
+      expiresOn: 4,
+    };
+    expect(toNotation(granted)).toBe("+AM@d1[R]!"); // Amazon on d1, fodder rook, immediate
+    const expired: GameEvent = { kind: "boostExpired", color: "w", base: "q", square: parseSquare("d1") };
+    expect(toNotation(expired)).toBe("-boost@d1");
   });
 });
 

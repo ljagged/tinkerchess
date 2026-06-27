@@ -98,14 +98,15 @@ function objectFieldSpec(vj: VJson): Record<string, { optional: boolean }> {
 
 describe("validator parity — recordedActionV mirrors the engine Action union", () => {
   it("has exactly the engine's action discriminants", () => {
-    expect(discriminants(recordedJson)).toEqual(new Set(["move", "phaseOut"]));
+    expect(discriminants(recordedJson)).toEqual(new Set(["move", "phaseOut", "boost"]));
   });
 
   it("each variant declares exactly the engine's stored fields", () => {
     // Recorded form (games.ts): move flattens Move (incl. the Chess960 castle flag);
-    // phaseOut flattens PhaseOut.
+    // phaseOut flattens PhaseOut; boost flattens BoostInput.
     expect(fieldsOf(recordedJson, "move")).toEqual(new Set(["kind", "from", "to", "promotion", "castle"]));
     expect(fieldsOf(recordedJson, "phaseOut")).toEqual(new Set(["kind", "from", "duration"]));
+    expect(fieldsOf(recordedJson, "boost")).toEqual(new Set(["kind", "target", "fodder", "move"]));
   });
 
   it("accepts a representative value of every variant", () => {
@@ -113,10 +114,12 @@ describe("validator parity — recordedActionV mirrors the engine Action union",
     expect(accepts(recordedJson, { kind: "move", from: 52, to: 60, promotion: "q" })).toBe(true);
     expect(accepts(recordedJson, { kind: "move", from: 4, to: 7, castle: "K" })).toBe(true); // 960 king-onto-rook
     expect(accepts(recordedJson, { kind: "phaseOut", from: 1, duration: 2 })).toBe(true);
+    expect(accepts(recordedJson, { kind: "boost", target: 1, fodder: [8] })).toBe(true); // standing
+    expect(accepts(recordedJson, { kind: "boost", target: 1, fodder: [8, 9, 10], move: { from: 1, to: 18 } })).toBe(true); // immediate
   });
 
   it("rejects foreign kinds and extra fields", () => {
-    expect(accepts(recordedJson, { kind: "boost", from: 1, to: 2 })).toBe(false);
+    expect(accepts(recordedJson, { kind: "warp", from: 1, to: 2 })).toBe(false);
     expect(accepts(recordedJson, { kind: "move", from: 1, to: 2, bogus: true })).toBe(false);
     expect(accepts(recordedJson, { kind: "move", from: 1, to: 2, promotion: "k" })).toBe(false);
   });
@@ -124,7 +127,19 @@ describe("validator parity — recordedActionV mirrors the engine Action union",
 
 describe("validator parity — gameEventV mirrors the engine GameEvent union", () => {
   it("has exactly the engine's event discriminants", () => {
-    expect(discriminants(eventJson)).toEqual(new Set(["move", "phaseOut", "phaseIn"]));
+    expect(discriminants(eventJson)).toEqual(
+      new Set(["move", "phaseOut", "phaseIn", "boostGranted", "boostExpired"]),
+    );
+  });
+
+  it("the boost events declare exactly the engine's fields and accept samples", () => {
+    expect(fieldsOf(eventJson, "boostGranted")).toEqual(
+      new Set(["kind", "color", "base", "square", "fodder", "immediate", "expiresOn"]),
+    );
+    expect(fieldsOf(eventJson, "boostExpired")).toEqual(new Set(["kind", "color", "base", "square"]));
+    expect(accepts(eventJson, { kind: "boostGranted", color: "w", base: "q", square: 3, fodder: ["r"], expiresOn: 4 })).toBe(true);
+    expect(accepts(eventJson, { kind: "boostGranted", color: "w", base: "n", square: 1, fodder: ["p", "p", "p"], immediate: true, expiresOn: 4 })).toBe(true);
+    expect(accepts(eventJson, { kind: "boostExpired", color: "b", base: "b", square: 58 })).toBe(true);
   });
 
   it("each variant declares exactly the engine's event fields", () => {
@@ -155,7 +170,7 @@ describe("validator parity — gameEventV mirrors the engine GameEvent union", (
   });
 
   it("rejects a foreign event kind", () => {
-    expect(accepts(eventJson, { kind: "boostGranted", color: "w", piece: "q", from: 1, to: 2 })).toBe(false);
+    expect(accepts(eventJson, { kind: "warpGranted", color: "w", piece: "q", from: 1, to: 2 })).toBe(false);
   });
 });
 

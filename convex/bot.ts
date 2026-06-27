@@ -118,7 +118,7 @@ export const takeTurn = internalAction({
         ...(action.move.promotion ? { promotion: action.move.promotion } : {}),
         requestId,
       });
-    } else {
+    } else if (action.kind === "phaseOut") {
       await ctx.runMutation(api.games.phaseOut, {
         gameId,
         seatToken: c.botSeatToken,
@@ -126,6 +126,11 @@ export const takeTurn = internalAction({
         duration: action.phaseOut.duration,
         requestId,
       });
+    } else {
+      // Boost has no Convex mutation yet (the boost UI is deferred — plan Stage 3
+      // sub-task); the bot only fills seats in classical/phasing games, so this is
+      // unreachable in practice. Fail loud if a boost-enabled bot game is ever wired.
+      throw new Error("bot cannot submit a boost action yet (no Convex boost mutation)");
     }
     return null;
   },

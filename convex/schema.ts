@@ -128,6 +128,14 @@ export const gameStateV = v.object({
 const captureV = v.object({ color: colorV, type: pieceTypeV });
 // Promotion can only be to a non-pawn, non-king piece (matches engine GameEvent).
 const promotionTypeV = v.union(v.literal("n"), v.literal("b"), v.literal("r"), v.literal("q"));
+// A boost upgrades any non-pawn piece (matches engine FairyBase).
+const fairyBaseV = v.union(
+  v.literal("n"),
+  v.literal("b"),
+  v.literal("r"),
+  v.literal("q"),
+  v.literal("k"),
+);
 export const gameEventV = v.union(
   v.object({
     kind: v.literal("move"),
@@ -161,6 +169,22 @@ export const gameEventV = v.union(
     check: v.optional(v.literal(true)),
     checkmate: v.optional(v.literal(true)),
   }),
+  // Boost mechanic events (catalog additions, append-only-optional).
+  v.object({
+    kind: v.literal("boostGranted"),
+    color: colorV,
+    base: fairyBaseV,
+    square: v.number(),
+    fodder: v.array(pieceTypeV),
+    immediate: v.optional(v.literal(true)),
+    expiresOn: v.number(),
+  }),
+  v.object({
+    kind: v.literal("boostExpired"),
+    color: colorV,
+    base: fairyBaseV,
+    square: v.number(),
+  }),
 );
 
 export const recordedActionV = v.union(
@@ -178,6 +202,22 @@ export const recordedActionV = v.union(
     kind: v.literal("phaseOut"),
     from: v.number(),
     duration: v.number(),
+  }),
+  // Boost action (catalog addition). `move` present ⇒ immediate (boost + move). The
+  // boost UI is deferred, so no mutation writes these yet; the validator mirrors the
+  // engine Action union for parity and future replay.
+  v.object({
+    kind: v.literal("boost"),
+    target: v.number(),
+    fodder: v.array(v.number()),
+    move: v.optional(
+      v.object({
+        from: v.number(),
+        to: v.number(),
+        promotion: v.optional(promotionTypeV),
+        castle: v.optional(v.union(v.literal("K"), v.literal("Q"))),
+      }),
+    ),
   }),
 );
 

@@ -51,6 +51,14 @@ export interface Mechanic {
   applyAction?(state: GameState, action: Action): { state: GameState; events: GameEvent[] };
 
   /**
+   * React to a "move" action's board mutation, mutating `state` in place (it is a
+   * fresh post-move clone). Lets a mechanic carry per-piece state with the piece —
+   * boost relocates a moved piece's buff from→to and drops a captured one. NOT called
+   * for the mechanic's OWN actions (those handle their own bookkeeping).
+   */
+  afterMove?(state: GameState, move: Move): void;
+
+  /**
    * End-of-turn tick for `mover` (phase-ins, buff expiry), after the turn counter
    * increments and before the turn flips. Returns the new state and any events.
    */

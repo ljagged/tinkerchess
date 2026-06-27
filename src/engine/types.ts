@@ -221,9 +221,24 @@ export interface PhaseOut {
   duration: number;
 }
 
+/**
+ * A boost action: upgrade your own non-pawn piece on `target` to its fairy form by
+ * sacrificing `fodder` (your own pieces, classically valued, summing EXACTLY to the
+ * cost — no change, no banking). With `move` present the boost is IMMEDIATE — the
+ * piece also moves this turn (cost + a premium); without it, the boost consumes the
+ * turn. The fodder squares are removed; the boosted piece stands for a 3-turn buff.
+ */
+export interface BoostInput {
+  target: SquareIndex;
+  fodder: SquareIndex[];
+  /** When present, the boosted piece moves this turn (immediate boost). */
+  move?: Move;
+}
+
 export type Action =
   | { kind: "move"; move: Move }
-  | { kind: "phaseOut"; phaseOut: PhaseOut };
+  | { kind: "phaseOut"; phaseOut: PhaseOut }
+  | { kind: "boost"; boost: BoostInput };
 
 /**
  * A DERIVED event: what actually happened when an action was applied, with all
@@ -262,6 +277,25 @@ export type GameEvent =
       from: SquareIndex;
       duration: number;
       returnOn: number;
+    }
+  | {
+      kind: "boostGranted";
+      color: Color;
+      /** The upgraded piece type (selects the fairy form) and its square. */
+      base: FairyBase;
+      square: SquareIndex;
+      /** The sacrificed fodder piece types (for the move log). */
+      fodder: PieceType[];
+      /** True when the boost was immediate (the piece also moved this turn). */
+      immediate?: true;
+      /** Owner's turnsTaken value at which the buff expires. */
+      expiresOn: number;
+    }
+  | {
+      kind: "boostExpired";
+      color: Color;
+      base: FairyBase;
+      square: SquareIndex;
     }
   | {
       kind: "phaseIn";
