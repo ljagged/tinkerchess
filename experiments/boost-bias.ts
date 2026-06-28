@@ -95,6 +95,25 @@ const whiteScore = (t: Tally): number => {
   return n ? (t.w + 0.5 * t.draw) / n : 0;
 };
 
+// Progress goes to STDERR (still visible in a terminal) so that in JSON mode stdout
+// carries only the one result line the pool runner parses.
+function progress(played: number, baseline: Tally, boost: Tally): void {
+  const bW = (100 * whiteScore(baseline)).toFixed(1);
+  const oW = (100 * whiteScore(boost)).toFixed(1);
+  const delta = (100 * (whiteScore(boost) - whiteScore(baseline))).toFixed(1);
+  // eslint-disable-next-line no-console
+  console.error(
+    `[progress] games=${played}  baseline W%=${bW} (${baseline.w}/${baseline.b}/${baseline.draw})` +
+      `  boost W%=${oW} (${boost.w}/${boost.b}/${boost.draw})  delta=${delta}`,
+  );
+}
+
+/** When set, emit one machine-readable JSONL result line on stdout and nothing else
+ *  (the pool runner consumes this; progress still goes to stderr). */
+const JSON_MODE = process.env.JSON === "1";
+
+const PROGRESS_EVERY = Number(process.env.PROGRESS_EVERY ?? 5);
+
 function run() {
   const rand = mulberry32(SEED);
   const baseline: Tally = { w: 0, b: 0, draw: 0 };
@@ -108,6 +127,7 @@ function run() {
     add(baseline, playOut(opening, ["phasing"]));
     add(boost, playOut(opening, ["phasing", "boost"]));
     played++;
+    if (played % PROGRESS_EVERY === 0) progress(played, baseline, boost);
   }
   return { baseline, boost, played };
 }
@@ -115,6 +135,15 @@ function run() {
 const t0 = performance.now();
 const { baseline, boost, played } = run();
 const secs = ((performance.now() - t0) / 1000).toFixed(0);
+
+if (JSON_MODE) {
+  // One result line for the pool runner — raw counts so it can sum across workers.
+  // eslint-disable-next-line no-console
+  console.log(
+    JSON.stringify({ seed: SEED, depth: DEPTH, openingPlies: OPENING_PLIES, played, baseline, boost, secs: Number(secs) }),
+  );
+  process.exit(0);
+}
 
 const pctRow = (label: string, t: Tally) => [
   label,
