@@ -95,6 +95,20 @@ const whiteScore = (t: Tally): number => {
   return n ? (t.w + 0.5 * t.draw) / n : 0;
 };
 
+/** Print one CSV-ish progress line and flush, so a killed long run still leaves data. */
+function progress(played: number, baseline: Tally, boost: Tally): void {
+  const bW = (100 * whiteScore(baseline)).toFixed(1);
+  const oW = (100 * whiteScore(boost)).toFixed(1);
+  const delta = (100 * (whiteScore(boost) - whiteScore(baseline))).toFixed(1);
+  // eslint-disable-next-line no-console
+  console.log(
+    `[progress] games=${played}  baseline W%=${bW} (${baseline.w}/${baseline.b}/${baseline.draw})` +
+      `  boost W%=${oW} (${boost.w}/${boost.b}/${boost.draw})  delta=${delta}`,
+  );
+}
+
+const PROGRESS_EVERY = Number(process.env.PROGRESS_EVERY ?? 5);
+
 function run() {
   const rand = mulberry32(SEED);
   const baseline: Tally = { w: 0, b: 0, draw: 0 };
@@ -108,6 +122,7 @@ function run() {
     add(baseline, playOut(opening, ["phasing"]));
     add(boost, playOut(opening, ["phasing", "boost"]));
     played++;
+    if (played % PROGRESS_EVERY === 0) progress(played, baseline, boost);
   }
   return { baseline, boost, played };
 }
